@@ -121,6 +121,7 @@ TEMPLATE_THU_NGHIEM       = os.path.join(ICON_DIR, "thunghiem.png")  # A/B test 
 
 # Bước 2 - Phụ đề & End Screen
 TEMPLATE_DOI_TAI          = os.path.join(ICON_DIR, "doitai.png")   # đang tải video, chờ biến mất
+TEMPLATE_LOI              = os.path.join(ICON_DIR, "loi.png")     # video bị lỗi (mp4 hỏng)
 TEMPLATE_BUOC2            = os.path.join(ICON_DIR, "buoc2.png")
 TEMPLATE_STEP2_THEM       = os.path.join(ICON_DIR, "them.png")
 TEMPLATE_TAITEPLEN        = os.path.join(ICON_DIR, "taiteplen.png")
@@ -542,6 +543,38 @@ def verify_local_matches_server(local_folder: str, server_folder: str) -> bool:
     return True
 
 
+def verify_mp4_readable(file_path):
+    """Kiểm tra file mp4 có đọc được không.
+    Đọc header (8 bytes đầu) + đọc 1 chunk cuối file.
+    File bị cắt cụt sẽ thiếu dữ liệu cuối."""
+    try:
+        size = os.path.getsize(file_path)
+        if size < 8:
+            logging.warning(f"  MP4 qua nho ({size} bytes): {file_path}")
+            return False
+
+        with open(file_path, 'rb') as f:
+            # Đọc 8 bytes đầu — mp4 header thường là ftyp
+            header = f.read(8)
+            if b'ftyp' not in header and b'moov' not in header and b'mdat' not in header:
+                logging.warning(f"  MP4 header khong hop le: {file_path}")
+                return False
+
+            # Đọc 1MB cuối file — nếu file bị cắt cụt sẽ lỗi hoặc thiếu
+            read_pos = max(0, size - 1024 * 1024)
+            f.seek(read_pos)
+            tail = f.read()
+            if len(tail) < min(1024 * 1024, size - read_pos):
+                logging.warning(f"  MP4 khong doc duoc cuoi file: {file_path}")
+                return False
+
+        logging.info(f"  MP4 OK: {os.path.basename(file_path)} ({size / (1024**3):.2f} GB)")
+        return True
+    except Exception as e:
+        logging.warning(f"  MP4 loi doc: {file_path}: {e}")
+        return False
+
+
 COPY_CHUNK_SIZE = 64 * 1024 * 1024  # 64MB mỗi chunk — phù hợp file 10GB qua mạng
 COPY_MAX_RETRIES = 5
 # Ngưỡng file "lớn" (>100MB) sẽ dùng robocopy thay vì Python copy
@@ -746,6 +779,14 @@ def ensure_local_folder(code):
     if not verify_local_matches_server(local_folder, server_folder):
         logging.error(f"Sau copy, van co file khong khop: {local_folder}")
         return False
+
+    # Kiểm tra mp4 có đọc được không
+    for name in os.listdir(local_folder):
+        if name.lower().endswith(".mp4"):
+            mp4_path = os.path.join(local_folder, name)
+            if not verify_mp4_readable(mp4_path):
+                logging.error(f"MP4 bi loi sau copy: {mp4_path}")
+                return False
 
     logging.info(f"Copy hoan tat va xac nhan khop 100%%: {local_folder}")
     return True
@@ -1509,6 +1550,7 @@ def main():
     # === VÒNG LẶP ĐĂNG TỪNG MÃ ===
     first_time = True
     processed_codes = set()
+    error_retry_count = {}  # đếm số lần retry khi video lỗi
 
     for round_idx, code in enumerate(ready_codes, 1):
         if code in processed_codes:
@@ -1604,10 +1646,19 @@ def main():
             WAIT_UPLOAD_MAX = 60 * 60  # 1 tiếng
             end_wait = time.time() + WAIT_UPLOAD_MAX
             check_count = 0
+            video_error = False
 
             while time.time() < end_wait:
                 time.sleep(60)  # chờ 1 phút rồi mới kiểm tra lại
                 check_count += 1
+
+                # Kiểm tra loi.png — video bị lỗi (mp4 hỏng)
+                pos_loi = wait_image(TEMPLATE_LOI, timeout_sec=5, confidence=0.70)
+                if pos_loi:
+                    logging.error("PHAT HIEN LOI VIDEO (loi.png)! MP4 bi hong.")
+                    video_error = True
+                    break
+
                 still_uploading = wait_image(TEMPLATE_DOI_TAI, timeout_sec=30, confidence=0.70)
                 if not still_uploading:
                     logging.info("Video da tai xong! Tiep tuc Buoc 2 binh thuong.")
@@ -1618,6 +1669,45 @@ def main():
                 # Hết 1 tiếng vẫn chưa xong → bỏ qua Step 2
                 logging.warning("Het 1 tieng van chua tai xong -> bo qua Buoc 2, chuyen thang hen lich.")
                 skip_step2 = True
+
+            # === XỬ LÝ VIDEO LỖI: đóng browser → xóa local → copy lại → thử lại ===
+            if video_error:
+                retries = error_retry_count.get(code, 0)
+                if retries >= 2:
+                    logging.error(f"Ma {code} da loi {retries} lan -> BO QUA vinh vien.")
+                    continue
+
+                error_retry_count[code] = retries + 1
+                logging.info(f"Dong browser, xoa file loi, copy lai tu server (lan thu {retries + 1}/2)...")
+                close_browsers_gently_in_rdp()
+                rsleep("small")
+
+                # Xóa thư mục local bị lỗi
+                local_folder_err = os.path.join(LOCAL_DONE_ROOT, code)
+                try:
+                    if os.path.isdir(local_folder_err):
+                        shutil.rmtree(local_folder_err, ignore_errors=True)
+                        logging.info(f"Da xoa local loi: {local_folder_err}")
+                except Exception as ex:
+                    logging.warning(f"Khong xoa duoc local: {ex}")
+
+                # Copy lại từ server
+                copy_ok = ensure_local_folder(code)
+                if not copy_ok:
+                    logging.error(f"Copy lai tu server that bai -> bo qua ma {code}.")
+                    continue
+
+                # Thêm mã này lại cuối danh sách để thử lại
+                ready_codes.append(code)
+                logging.info(f"Da them lai ma {code} vao cuoi danh sach de thu lai.")
+
+                # Mở lại browser
+                logging.info("Mo lai browser...")
+                open_run_and_execute(RUN_BROWSER_EXE)
+                time.sleep(BROWSER_LAUNCH_WAIT_SEC)
+                first_time = True
+                continue
+
         else:
             logging.info("Khong thay doitai.png -> video da san sang, vao Buoc 2 binh thuong.")
 
