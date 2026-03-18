@@ -1596,23 +1596,24 @@ def main():
         # === KIỂM TRA VIDEO ĐANG TẢI (doitai.png) TRƯỚC KHI VÀO BƯỚC 2 ===
         skip_step2 = False
         logging.info("Kiem tra video dang tai (doitai.png)...")
-        pos_doitai = wait_image(TEMPLATE_DOI_TAI, timeout_sec=10, confidence=0.75)
+        pos_doitai = wait_image(TEMPLATE_DOI_TAI, timeout_sec=15, confidence=0.75)
 
         if pos_doitai:
             # Video đang tải → chờ tối đa 1 tiếng cho nó biến mất
             logging.info("Video dang tai! Cho toi da 1 tieng de tai xong...")
             WAIT_UPLOAD_MAX = 60 * 60  # 1 tiếng
             end_wait = time.time() + WAIT_UPLOAD_MAX
+            check_count = 0
 
             while time.time() < end_wait:
-                time.sleep(r(15, 30))  # kiểm tra mỗi 15-30 giây
-                still_uploading = wait_image(TEMPLATE_DOI_TAI, timeout_sec=5, confidence=0.75)
+                time.sleep(60)  # chờ 1 phút rồi mới kiểm tra lại
+                check_count += 1
+                still_uploading = wait_image(TEMPLATE_DOI_TAI, timeout_sec=30, confidence=0.70)
                 if not still_uploading:
                     logging.info("Video da tai xong! Tiep tuc Buoc 2 binh thuong.")
                     break
-                remaining = int(end_wait - time.time())
-                if remaining > 0 and remaining % 120 < 30:
-                    logging.info("Van dang tai... con %d phut.", remaining // 60)
+                remaining = int((end_wait - time.time()) / 60)
+                logging.info(f"Van dang tai... lan kiem tra {check_count}, con ~{remaining} phut.")
             else:
                 # Hết 1 tiếng vẫn chưa xong → bỏ qua Step 2
                 logging.warning("Het 1 tieng van chua tai xong -> bo qua Buoc 2, chuyen thang hen lich.")
