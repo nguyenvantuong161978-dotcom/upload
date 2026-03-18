@@ -14,6 +14,12 @@ if exist "run_update.bat" (
     del "run_update.bat" >nul 2>&1
 )
 
+REM ===== BAT IPv4 DE TAI CAP NHAT =====
+echo Bat IPv4 de tai cap nhat...
+powershell -Command "Get-NetAdapter | ForEach-Object { Enable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }" >nul 2>&1
+REM Cho mang on dinh sau khi bat IPv4
+timeout /t 5 /nobreak >nul
+
 REM Tai ZIP tu GitHub bang PowerShell (khong can cai Git)
 set "GITHUB_URL=https://github.com/nguyenvantuong161978-dotcom/upload/archive/refs/heads/main.zip"
 set "ZIP_FILE=%TEMP%\upload_update.zip"
@@ -24,7 +30,7 @@ powershell -Command "try { [Net.ServicePointManager]::SecurityProtocol = [Net.Se
 
 if %ERRORLEVEL% neq 0 (
     echo Khong the tai cap nhat. Chay phien ban hien tai...
-    goto :run_scripts
+    goto :disable_ipv4
 )
 
 REM Xoa thu muc giai nen cu neu co
@@ -82,6 +88,12 @@ echo ============================================
 echo   CAP NHAT HOAN TAT!
 echo ============================================
 echo.
+
+:disable_ipv4
+REM ===== TAT IPv4 SAU KHI TAI XONG =====
+echo Tat IPv4 de chay tool...
+powershell -Command "Get-NetAdapter | ForEach-Object { Disable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }" >nul 2>&1
+timeout /t 3 /nobreak >nul
 
 :run_scripts
 echo Dang khoi dong cac script...
