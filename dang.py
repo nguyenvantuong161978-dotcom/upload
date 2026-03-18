@@ -1,19 +1,212 @@
-﻿
-import os,logging, time,random
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║  TOOL ĐĂNG VIDEO YOUTUBE TỰ ĐỘNG                                   ║
+# ║  Sử dụng PyAutoGUI + nhận diện ảnh + Google Sheets                 ║
+# ║                                                                      ║
+# ║  CẤU TRÚC FILE:                                                     ║
+# ║   S1  - IMPORTS & SETUP                                             ║
+# ║   S2  - CẤU HÌNH KÊNH & ĐƯỜNG DẪN                                  ║
+# ║   S3  - CẤU HÌNH CỘT GOOGLE SHEETS                                 ║
+# ║   S4  - CẤU HÌNH ICON TEMPLATES                                     ║
+# ║   S5  - CẤU HÌNH HUMAN-LIKE (timing, click offset, bezier...)      ║
+# ║   S6  - HÀM CƠ SỞ (sleep, click, paste, scale)                    ║
+# ║   S7  - GOOGLE SHEETS (kết nối, đọc, ghi)                          ║
+# ║   S8  - QUẢN LÝ FILE & THƯ MỤC                                     ║
+# ║   S9  - AUTOMATION TRÌNH DUYỆT (open_run, wait_image, close)       ║
+# ║   S10 - BƯỚC 1: UPLOAD FILE & NHẬP METADATA                        ║
+# ║   S11 - BƯỚC 2: PHỤ ĐỀ, END SCREEN, THẺ                           ║
+# ║   S12 - BƯỚC 3-4: HẸN LỊCH & CẬP NHẬT TRẠNG THÁI                  ║
+# ║   S13 - MAIN LOOP                                                   ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S1 - IMPORTS & SETUP                                                │
+# └──────────────────────────────────────────────────────────────────────┘
+
+import os
+import logging
+import time
+import random
+import math
+import ctypes
+import shutil
 from types import SimpleNamespace
+from datetime import datetime, timedelta
+
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
 import pyautogui
 import pyperclip
-from datetime import datetime, timedelta  # ⬅️ thêm timedelta
-import ctypes
-import shutil
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+pyautogui.FAILSAFE = False
 
 # Bật DPI-aware để PyAutoGUI/Windows dùng cùng hệ quy chiếu
 try:
     ctypes.windll.user32.SetProcessDPIAware()
 except Exception:
     pass
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S2 - CẤU HÌNH KÊNH & ĐƯỜNG DẪN                                     │
+# └──────────────────────────────────────────────────────────────────────┘
+
+CHANNEL_CODE      = "KA2-T2"
+RUN_BROWSER_EXE   = r"C:\Users\Administrator\Documents\KA2-T2\KA2-T2\KA2-T2.exe"
+LOCAL_DONE_ROOT   = r"C:\Users\Administrator\Desktop\done"
+SERVER_DONE_ROOT  = r"Z:\AUTO\done"
+UPLOAD_URL        = "https://www.youtube.com/upload"
+
+# Google Sheets
+SPREADSHEET_NAME  = "KA"
+INPUT_SHEET       = "INPUT"
+SOURCE_SHEET      = "NGUON"
+CREDENTIAL_PATH   = "creds.json"
+STATUS_OK         = "EDIT XONG"
+STATUS_COL        = 48  # AV = cột 48
+
+# Đường dẫn thư mục video
+BASE_DIR          = os.path.dirname(os.path.abspath(__file__))
+FOLDER_PATTERN    = os.path.join(LOCAL_DONE_ROOT, "{code}")
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S3 - CẤU HÌNH CỘT GOOGLE SHEETS (zero-based index)                 │
+# └──────────────────────────────────────────────────────────────────────┘
+
+IDX_CHANNEL_AI = 34   # AI - mã kênh
+IDX_STATUS_AV  = 47   # AV - trạng thái (value = STATUS_OK)
+IDX_TITLE_BB   = 53   # BB - tiêu đề video
+IDX_DESC_BC    = 54   # BC - mô tả video
+IDX_LINK_BD    = 55   # BD - link video card 1
+IDX_LINK_BE    = 56   # BE - link video card 2
+IDX_LINK_BF    = 57   # BF - link video card 3
+IDX_LINK_BG    = 58   # BG - link video card 4
+IDX_DATE_BI    = 60   # BI - ngày hẹn lịch
+IDX_TIME_BJ    = 61   # BJ - giờ hẹn lịch
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S4 - CẤU HÌNH ICON TEMPLATES                                        │
+# └──────────────────────────────────────────────────────────────────────┘
+
+ICON_DIR = os.path.join(BASE_DIR, "icon")
+
+# Bước Upload
+TEMPLATE_SELECT_BTN       = os.path.join(ICON_DIR, "chonfile.png")
+TEMPLATE_OPEN_READY       = os.path.join(ICON_DIR, "open.png")
+TEMPLATE_FILENAME         = os.path.join(ICON_DIR, "filename.png")
+
+# Bước 1 - Metadata
+TEMPLATE_NEXT_BTN         = os.path.join(ICON_DIR, "tiep.png")
+TEMPLATE_DANHSACHPHAT     = os.path.join(ICON_DIR, "danhsachphat.png")
+TEMPLATE_THU_NGHIEM       = os.path.join(ICON_DIR, "thunghiem.png")  # A/B test thumbnail
+
+# Bước 2 - Phụ đề & End Screen
+TEMPLATE_DOI_TAI          = os.path.join(ICON_DIR, "doitai.png")   # đang tải video, chờ biến mất
+TEMPLATE_BUOC2            = os.path.join(ICON_DIR, "buoc2.png")
+TEMPLATE_STEP2_THEM       = os.path.join(ICON_DIR, "them.png")
+TEMPLATE_TAITEPLEN        = os.path.join(ICON_DIR, "taiteplen.png")
+TEMPLATE_TIEPTUC          = os.path.join(ICON_DIR, "tieptuc.png")
+TEMPLATE_DONE             = os.path.join(ICON_DIR, "xong.png")
+TEMPLATE_ENDSCREEN        = os.path.join(ICON_DIR, "manhinhketthuc.png")
+TEMPLATE_CHON_ENDSCREEN   = os.path.join(ICON_DIR, "chonmanhinhketthuc.png")
+TEMPLATE_DANGKY           = os.path.join(ICON_DIR, "dangky.png")
+TEMPLATE_SAVE             = os.path.join(ICON_DIR, "luu.png")
+
+# Bước 2 - Thẻ (Cards)
+TEMPLATE_KETTHUC_OK       = os.path.join(ICON_DIR, "ketthucok.png")
+TEMPLATE_THE              = os.path.join(ICON_DIR, "the.png")
+TEMPLATE_THE1             = os.path.join(ICON_DIR, "the1.png")
+TEMPLATE_CHONVIDEO_CUTHE  = os.path.join(ICON_DIR, "chonmotvideocuthe.png")
+TEMPLATE_TAGVIDEO         = os.path.join(ICON_DIR, "tagvideo.png")
+
+# Bước 3-4 - Hẹn lịch
+TEMPLATE_CHEDO_HIEN_THI   = os.path.join(ICON_DIR, "chedohienthi.png")
+TEMPLATE_HENLICH          = os.path.join(ICON_DIR, "henlich.png")
+TEMPLATE_TIME             = os.path.join(ICON_DIR, "time.png")
+TEMPLATE_SCHEDULE_PUBLISH = os.path.join(ICON_DIR, "lenlich.png")
+TEMPLATE_KIEM_TRA         = os.path.join(ICON_DIR, "kiemtra.png")
+TEMPLATE_DA_LEN_LICH      = os.path.join(ICON_DIR, "dalenlichchovideo.png")
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S5 - CẤU HÌNH HUMAN-LIKE                                            │
+# │                                                                      │
+# │ Mục đích: Mọi thao tác chuột/bàn phím đều mô phỏng hành vi người   │
+# │ thật, tránh bị hệ thống phát hiện là tool tự động.                  │
+# │                                                                      │
+# │ Tất cả tham số đều có thể bật/tắt và chỉnh ngay tại đây.           │
+# └──────────────────────────────────────────────────────────────────────┘
+
+HUMAN = SimpleNamespace(
+
+    # ── Timing (thời gian nghỉ giữa các thao tác) ──
+    # Tăng cho RDP lag — khoảng rộng hơn để tự nhiên
+    tiny=(0.8, 1.5),             # cũ: 0.5-0.9  → giữa phím Tab, Ctrl+V
+    small=(1.8, 3.0),            # cũ: 1.2-2.0  → sau Enter nhẹ, click nhỏ
+    medium=(3.5, 6.0),           # cũ: 2.5-4.0  → chờ UI load
+    long=(7.0, 12.0),            # cũ: 5.0-8.0  → chờ hộp thoại, trang load
+
+    # ── Retry (chờ khi dò ảnh) ──
+    retry_interval=(1.5, 2.8),   # cũ: 1.2-2.0
+
+    # ── Timeout & Confidence (nhận diện ảnh) ──
+    click_timeout=(150, 240),    # cũ: 120-180  → chờ ảnh 2.5-4 phút
+    click_confidence=(0.80, 0.92),  # cũ: 0.85-0.95  → bớt khó tính cho RDP mờ
+    step2_timeout=(200, 300),    # cũ: 150-240  → bước 2 chờ 3.3-5 phút
+    browser_wait=(18, 30),       # cũ: 12-20    → chờ browser khởi động lâu hơn
+
+    # ── Click Offset: lệch tâm khi click vào ảnh ──
+    # Người thật không bao giờ click chính giữa nút
+    # Offset tính theo % kích thước ảnh, đảm bảo luôn nằm trong ảnh
+    click_offset_enabled=True,
+    click_offset_ratio=0.35,      # offset tối đa = 35% nửa chiều rộng/cao ảnh
+
+    # ── Mouse Curve: di chuột theo đường cong Bezier ──
+    # Người thật di chuột theo đường cong, không thẳng tắp
+    mouse_curve_enabled=True,
+    mouse_move_duration=(0.35, 0.7),    # cũ: 0.25-0.45  → di chuột chậm hơn
+    mouse_curve_strength=(0.15, 0.35),
+    mouse_curve_steps=30,
+
+    # ── Hover Before Click: dừng lại trước khi click ──
+    # Đôi khi người thật di chuột tới rồi "suy nghĩ" mới click
+    hover_enabled=True,
+    hover_chance=0.35,            # cũ: 0.30  → 35% hover trước
+    hover_delay=(0.15, 0.5),     # cũ: 0.1-0.35  → dừng lâu hơn
+
+    # ── Micro Jitter: rung nhẹ chuột ──
+    # Tay người không bao giờ giữ chuột hoàn toàn yên
+    jitter_enabled=True,
+    jitter_px=(1, 3),             # rung 1-3 pixel
+
+    # ── Random Micro Pause: dừng suy nghĩ giữa các bước ──
+    # Người thật đôi khi dừng vài giây để xem/đọc
+    micro_pause_chance=0.20,      # cũ: 0.15  → 20% dừng suy nghĩ
+    micro_pause_sec=(2.0, 5.0),   # cũ: 1.5-4.0  → dừng lâu hơn
+
+    # ── Random Scroll: cuộn nhẹ trước thao tác ──
+    # Người thật hay cuộn trang lên/xuống để xem lại
+    scroll_enabled=True,
+    scroll_chance=0.10,           # 10% xác suất cuộn
+    scroll_amount=(-2, 2),        # số lần cuộn (âm = lên, dương = xuống)
+)
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S6 - HÀM CƠ SỞ (sleep, click, paste, scale, bezier)               │
+# └──────────────────────────────────────────────────────────────────────┘
+
+def rand(a, b):
+    """Random float trong [a, b]."""
+    return random.uniform(a, b)
+
+# Alias ngắn gọn
+r = rand
+
 
 def _get_scale():
     """Tính tỉ lệ (screenshot px) / (logical px) theo 2 trục."""
@@ -23,210 +216,148 @@ def _get_scale():
     sy = ih / (sh or 1)
     return sx, sy
 
+
 def _to_logical(x, y):
-    """Đổi toạ độ từ ảnh chụp (kết quả locateCenterOnScreen) sang logical px để moveTo/click."""
+    """Đổi toạ độ từ ảnh chụp sang logical px."""
     sx, sy = _get_scale()
     return int(x / sx), int(y / sy)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
-pyautogui.FAILSAFE = False  # tránh dừng khẩn cấp khi chuột ra góc
-
-# ================== CẤU HÌNH TRỰC TIẾP ==================
-CHANNEL_CODE       = "KA2-T2"    # cột AI
-RUN_BROWSER_EXE   = r"C:\Users\Administrator\Documents\KA2-T2\KA2-T2\KA2-T2.exe"
-# Thư mục video local (trên máy ảo)
-LOCAL_DONE_ROOT   = r"C:\Users\Administrator\Desktop\done"
-# Thư mục video trên máy chủ (qua RDP)
-SERVER_DONE_ROOT  = r"Z:\AUTO\done"
-
-
-
-SPREADSHEET_NAME   = "KA"
-INPUT_SHEET        = "INPUT"
-SOURCE_SHEET = "NGUON"  # sheet nguồn để cập nhật trạng thái
-CREDENTIAL_PATH    = "creds.json"
-STATUS_OK          = "EDIT XONG" # cột AV
-STATUS_COL = 48  # AV = cột 48
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# CỘT: BB=53, BC=54 (zero-based) — thêm:
-IDX_DATE_BI = 60  # BI
-IDX_TIME_BJ = 61  # BJ
-IDX_LINK_BD = 55  # BD
-IDX_LINK_BE = 56  # BE
-IDX_LINK_BF = 57  # BF
-IDX_LINK_BG = 58  # BG
-
-# ================== CẤU HÌNH ĐƯỜNG DẪN ==================
-UPLOAD_URL        = "https://www.youtube.com/upload"
-# Mẫu đường dẫn thư mục video theo mã
-FOLDER_PATTERN    = os.path.join(LOCAL_DONE_ROOT, "{code}")
-
-
-
-# Thư mục icon (nằm cạnh file py)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ICON_DIR = os.path.join(BASE_DIR, "icon")
-TEMPLATE_SELECT_BTN = os.path.join(ICON_DIR, "chonfile.png")
-TEMPLATE_DANHSACHPHAT = os.path.join(ICON_DIR, "danhsachphat.png")
-TEMPLATE_DANGKY = os.path.join(ICON_DIR, "dangky.png")
-TEMPLATE_NEXT_BTN   = os.path.join(ICON_DIR, "tiep.png")  # ảnh “Tiếp” trên trang metadata
-TEMPLATE_OPEN_READY = os.path.join(ICON_DIR, "open.png")  # ảnh báo trang browser đã sẵn sàng
-TEMPLATE_BUOC2 = os.path.join(ICON_DIR, "buoc2.png")  # anchor hiển thị rõ đã vào màn Bước 2
-TEMPLATE_CHON_ENDSCREEN = os.path.join(ICON_DIR, "chonmanhinhketthuc.png")  # nút/ô chọn màn hình kết thúc trong editor
-TEMPLATE_STEP2_THEM = os.path.join(ICON_DIR, "them.png")  # xác nhận đã sang bước 2
-TEMPLATE_DONE       = os.path.join(ICON_DIR, "xong.png")  # nút/ảnh “xong”
-TEMPLATE_SAVE       = os.path.join(ICON_DIR, "luu.png")   # nút “lưu”
-TEMPLATE_ENDSCREEN  = os.path.join(ICON_DIR, "manhinhketthuc.png")  # xác nhận đã về màn “Màn hình kết thúc”
-TEMPLATE_CHONVIDEO_CUTHE = os.path.join(ICON_DIR, "chonmotvideocuthe.png")  # UI “Chọn một video cụ thể”
-TEMPLATE_THE1      = os.path.join(ICON_DIR, "the1.png")
-TEMPLATE_HENLICH = os.path.join(ICON_DIR, "henlich.png")  # Ảnh nút hẹn lịch
-TEMPLATE_SCHEDULE_PUBLISH = os.path.join(ICON_DIR, "lenlich.png")  # nút Lên lịch
-TEMPLATE_DA_LEN_LICH = os.path.join(ICON_DIR, "dalenlichchovideo.png")  # ✅ ảnh xác nhận đã lên lịch cho video
-TEMPLATE_FILENAME = os.path.join(ICON_DIR, "filename.png")
-TEMPLATE_TAITEPLEN = os.path.join(ICON_DIR, "taiteplen.png")  # nút/ô tải tệp lên phụ đề
-TEMPLATE_KETTHUC_OK = os.path.join(ICON_DIR, "ketthucok.png")  # xác nhận đã về màn 'Màn hình kết thúc'
-TEMPLATE_THE        = os.path.join(ICON_DIR, "the.png")        # nút 'Thẻ' (Cards)
-TEMPLATE_TAGVIDEO   = os.path.join(ICON_DIR, "tagvideo.png")   # ảnh gợi ý video khi dán link
-TEMPLATE_TIME = os.path.join(ICON_DIR, "time.png")
-TEMPLATE_TIEPTUC   = os.path.join(ICON_DIR, "tieptuc.png")  # nút/ô 'Tiếp tục' để mở hộp thoại Open SRT
-TEMPLATE_CHEDO_HIEN_THI = os.path.join(ICON_DIR, "chedohienthi.png")
-
-
-# ================== THAM SỐ NGẪU NHIÊN (dễ chỉnh) ==================
-RANDOM = SimpleNamespace(
-    # thời gian nghỉ nhỏ
-    tiny=(0.5, 0.9),
-    small=(1.2, 2.0),
-    medium=(2.5, 4.0),
-    long=(5.0, 8.0),
-
-    # di chuyển chuột
-    mouse_move=(0.25, 0.45),
-
-    # khoảng nghỉ khi retry dò hình ảnh
-    retry_screen_interval=(1.2, 2.0),
-
-    # RDP / Browser
-
-
-    browser_launch_wait_sec=(12, 20),
-
-
-    # nhận diện ảnh
-    click_timeout_sec=(120, 180),        # chờ ảnh hiển thị tới 2–3 phút
-    click_confidence=(0.85, 0.95),       # bớt khó tính khi hình hơi mờ
-
-    # Bước 2 (subtitles, end screen) thường load lâu
-    step2_load_timeout_sec=(150, 240),   # 2.5–4 phút
-)
-
-
-def r(a, b):  # random float trong [a, b]
-    return random.uniform(a, b)
-
-def cleanup_posted_codes():
-    """Xóa thư mục local của các mã đã có trạng thái 'ĐÃ ĐĂNG' trong Sheet."""
-    logging.info("🧹 Dọn các mã đã đăng...")
-    client = gs_client()
-    ws = client.open(SPREADSHEET_NAME).worksheet(INPUT_SHEET)
-    rows = ws.get_all_values()
-
-    for row in rows[1:]:
-        code = row[0].strip() if len(row) > 0 else ""
-        status = row[STATUS_COL-1].strip() if len(row) >= STATUS_COL else ""
-        if code and status.upper() == "ĐÃ ĐĂNG":
-            folder_path = os.path.join(LOCAL_DONE_ROOT, code)
-            if os.path.isdir(folder_path):
-                try:
-                    shutil.rmtree(folder_path)
-                    logging.info(f"🗑️ Đã xóa: {folder_path}")
-                except Exception as e:
-                    logging.warning(f"Không xóa được {folder_path}: {e}")
-
-
-
-def click_once(x, y):
-    lx, ly = _to_logical(x, y)
-    pyautogui.moveTo(lx, ly, duration=r(*RANDOM.mouse_move))
-    pyautogui.click(lx, ly)
-
-def _parse_date(s):
-    for f in ("%d/%m/%Y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(s.strip(), f).date()
-        except: pass
-    return None
-
-def _parse_time(s):
-    for f in ("%H:%M:%S", "%H:%M"):
-        try:
-            return datetime.strptime(s.strip(), f).time()
-        except: pass
-    return None
-
-
-
-def close_browsers_gently_in_rdp():
-    # Clear temp directory first
-    logging.info("Xóa các file trong thư mục %temp%...")
-    open_run_and_execute('cmd /c del /q /f /s "%temp%\\*.*" >nul 2>&1')
-    rsleep("small")
-    
-    exebase = os.path.splitext(os.path.basename(RUN_BROWSER_EXE))[0]
-    # 🟡 Lần 1: đóng nhẹ bằng CloseMainWindow() cho chrome, msedge, firefox, exebase
-    ps_close = (
-        "$names=@('chrome','msedge','firefox','{ex}');"
-        "$procs=Get-Process -ErrorAction SilentlyContinue | ?{{ $names -contains $_.ProcessName }};"
-        "foreach($p in $procs){{ if($p.MainWindowHandle -ne 0){{ $null=$p.CloseMainWindow() }} }}"
-    ).format(ex=exebase)
-    open_run_and_execute(f'powershell -NoProfile -WindowStyle Hidden -Command "{ps_close}"')
-    rsleep("small")
-
-
-    # 🟡 Lần 2: Stop-Process -Force (PowerShell) — bao gồm cả tiến trình bắt đầu bằng 'firefox' (nếu có)
-    ps_kill = (
-        "$names=@('chrome','msedge','firefox','{ex}');"
-        # kill exact names first
-        "foreach($n in $names){{ $p=Get-Process -Name $n -ErrorAction SilentlyContinue; if($p){{ $p | Stop-Process -Force }}}};"
-        # thêm một lớp nữa để bắt các tiến trình có tiền tố firefox* (nếu có tiến trình con tên hơi khác)
-        "$pf=Get-Process -ErrorAction SilentlyContinue | Where-Object {{ $_.ProcessName -like 'firefox*' }}; if($pf){{ $pf | Stop-Process -Force }};"
-    ).format(ex=exebase)
-    open_run_and_execute(f'powershell -NoProfile -WindowStyle Hidden -Command "{ps_kill}"')
-    rsleep("small")
-
-    # 🟡 Lần 3: taskkill kiểu “skill” mạnh (chắc chắn kill tất cả các tiến trình có liên quan)
-    exename = os.path.basename(RUN_BROWSER_EXE)
-    skill = (
-        'cmd /c '
-        'taskkill /F /IM chrome.exe /T 2>nul & '
-        'taskkill /F /IM msedge.exe /T 2>nul & '
-        'taskkill /F /IM firefox.exe /T 2>nul & '
-        'taskkill /F /IM "{ex}" /T 2>nul'
-    ).format(ex=exename)
-    open_run_and_execute(skill)
-    rsleep("small")
-
-
 
 def rsleep(bucket="small"):
-    lo, hi = getattr(RANDOM, bucket)
+    """Sleep ngẫu nhiên theo bucket timing."""
+    lo, hi = getattr(HUMAN, bucket)
     time.sleep(r(lo, hi))
 
+
+def maybe_micro_pause():
+    """Đôi khi dừng suy nghĩ như người thật."""
+    if random.random() < HUMAN.micro_pause_chance:
+        pause = r(*HUMAN.micro_pause_sec)
+        logging.debug("Micro pause %.1fs", pause)
+        time.sleep(pause)
+
+
+def maybe_random_scroll():
+    """Đôi khi cuộn trang nhẹ như người thật đang xem lại."""
+    if HUMAN.scroll_enabled and random.random() < HUMAN.scroll_chance:
+        amount = random.randint(*HUMAN.scroll_amount)
+        if amount != 0:
+            pyautogui.scroll(amount)
+            logging.debug("Random scroll %d", amount)
+            time.sleep(r(0.2, 0.5))
+
+
+def _bezier_move(target_x, target_y, duration=None):
+    """
+    Di chuột theo đường cong Bezier 3 điểm (quadratic).
+    Mô phỏng cách người thật di chuột: không bao giờ đi thẳng.
+    """
+    if duration is None:
+        duration = r(*HUMAN.mouse_move_duration)
+
+    start_x, start_y = pyautogui.position()
+    steps = HUMAN.mouse_curve_steps
+
+    # Điểm kiểm soát Bezier: lệch sang 1 bên ngẫu nhiên
+    mid_x = (start_x + target_x) / 2
+    mid_y = (start_y + target_y) / 2
+    dist = math.sqrt((target_x - start_x) ** 2 + (target_y - start_y) ** 2)
+    strength = r(*HUMAN.mouse_curve_strength)
+    offset = dist * strength
+
+    # Lệch vuông góc với đường thẳng
+    angle = math.atan2(target_y - start_y, target_x - start_x) + math.pi / 2
+    direction = random.choice([-1, 1])
+    ctrl_x = mid_x + direction * offset * math.cos(angle)
+    ctrl_y = mid_y + direction * offset * math.sin(angle)
+
+    step_delay = duration / steps
+    for i in range(1, steps + 1):
+        t = i / steps
+        # Quadratic Bezier: B(t) = (1-t)²·P0 + 2(1-t)t·P1 + t²·P2
+        bx = (1 - t) ** 2 * start_x + 2 * (1 - t) * t * ctrl_x + t ** 2 * target_x
+        by = (1 - t) ** 2 * start_y + 2 * (1 - t) * t * ctrl_y + t ** 2 * target_y
+        pyautogui.moveTo(int(bx), int(by), _pause=False)
+        time.sleep(step_delay)
+
+
+def _human_move_to(x, y):
+    """Di chuột tới (x, y) theo kiểu người thật (Bezier hoặc thẳng)."""
+    if HUMAN.mouse_curve_enabled:
+        _bezier_move(x, y)
+    else:
+        pyautogui.moveTo(x, y, duration=r(*HUMAN.mouse_move_duration))
+
+
+def click_once(x, y, img_size=None):
+    """
+    Click tại toạ độ ảnh (x, y) với đầy đủ hiệu ứng human-like:
+    1. Chuyển physical → logical coords
+    2. Thêm offset ngẫu nhiên TRONG PHẠM VI ẢNH (không bao giờ click ra ngoài)
+    3. Di chuột theo đường cong Bezier
+    4. Hover trước click (30% chance)
+    5. Micro jitter (rung nhẹ tay)
+    6. Click
+    7. Micro pause ngẫu nhiên sau click
+
+    img_size: (width, height) của ảnh template đã tìm được.
+              Nếu có, offset sẽ nằm trong phạm vi ảnh.
+              Nếu không có, offset nhỏ cố định ±5px.
+    """
+    lx, ly = _to_logical(x, y)
+
+    # 1) Random offset — click ở vị trí khác trong ảnh, KHÔNG ra ngoài
+    if HUMAN.click_offset_enabled:
+        if img_size:
+            # img_size = (width, height) tính bằng physical pixels
+            # Chuyển sang logical pixels
+            sx, sy = _get_scale()
+            half_w = (img_size[0] / sx) / 2
+            half_h = (img_size[1] / sy) / 2
+            # Offset tối đa = ratio * nửa kích thước ảnh
+            max_ox = half_w * HUMAN.click_offset_ratio
+            max_oy = half_h * HUMAN.click_offset_ratio
+            lx += int(r(-max_ox, max_ox))
+            ly += int(r(-max_oy, max_oy))
+        else:
+            # Fallback: offset nhỏ an toàn
+            lx += random.randint(-5, 5)
+            ly += random.randint(-3, 3)
+
+    # 2) Di chuột theo đường cong Bezier
+    _human_move_to(lx, ly)
+
+    # 3) Hover trước click (như suy nghĩ)
+    if HUMAN.hover_enabled and random.random() < HUMAN.hover_chance:
+        time.sleep(r(*HUMAN.hover_delay))
+
+    # 4) Micro jitter — rung nhẹ tay
+    if HUMAN.jitter_enabled:
+        jx = random.randint(*HUMAN.jitter_px) * random.choice([-1, 1])
+        jy = random.randint(*HUMAN.jitter_px) * random.choice([-1, 1])
+        pyautogui.moveRel(jx, jy, duration=0.05)
+
+    # 5) Click
+    pyautogui.click()
+
+    # 6) Micro pause ngẫu nhiên sau click
+    maybe_micro_pause()
+
+
+def move_click(x, y, img_size=None):
+    """Alias cho click_once (giữ tương thích code cũ)."""
+    click_once(x, y, img_size=img_size)
+
+
+def _img_size(pos):
+    """Lấy (w, h) từ kết quả wait_image nếu có, None nếu không."""
+    if pos and hasattr(pos, 'w') and hasattr(pos, 'h'):
+        return (pos.w, pos.h)
+    return None
+
+
 def paste_text(text: str):
+    """Dán text bằng clipboard (Ctrl+V)."""
     if text is None:
         return
     pyperclip.copy(text)
@@ -234,750 +365,116 @@ def paste_text(text: str):
     pyautogui.hotkey('ctrl', 'v')
     rsleep("tiny")
 
-def move_click(x, y):
-    # giữ tên cũ cho toàn bộ code bên dưới
-    click_once(x, y)
+
+def press_key(key, n=1, bucket="tiny"):
+    """Nhấn phím n lần, mỗi lần nghỉ theo bucket."""
+    for _ in range(n):
+        pyautogui.press(key)
+        rsleep(bucket)
 
 
-# ================== GOOGLE SHEETS ==================
+def norm(s):
+    """Strip whitespace, trả None nếu không phải str."""
+    return s.strip() if isinstance(s, str) else None
+
+
+def _parse_date(s):
+    for f in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s.strip(), f).date()
+        except Exception:
+            pass
+    return None
+
+
+def _parse_time(s):
+    for f in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(s.strip(), f).time()
+        except Exception:
+            pass
+    return None
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S7 - GOOGLE SHEETS (kết nối, đọc, ghi)                              │
+# └──────────────────────────────────────────────────────────────────────┘
 
 def gs_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIAL_PATH, scope)
     return gspread.authorize(creds)
 
+
 def get_rows(client, sheet_name):
     return client.open(SPREADSHEET_NAME).worksheet(sheet_name).get_all_values()
 
-def norm(s):
-    return s.strip() if isinstance(s, str) else None
-
-
-
-
-
 
 def find_row_by_code(rows, code):
-    for r in rows[1:]:
-        if r and len(r) > 0 and norm(r[0]) == code:
-            return r
+    for row in rows[1:]:
+        if row and len(row) > 0 and norm(row[0]) == code:
+            return row
     return None
 
 
-
 def update_source_status(client, code, status="ĐÃ ĐĂNG"):
-    """
-    Tìm dòng trong sheet NGUON có cột G == code, rồi ghi 'ĐÃ ĐĂNG' vào cột M.
-    - Cột G (0-based index 6), cột M (0-based index 12).
-    - update_cell dùng index 1-based, nên cộng +1 và +2 tương ứng với header.
-    """
+    """Tìm dòng trong sheet NGUON có cột G == code, ghi status vào cột M."""
     try:
         ws = client.open(SPREADSHEET_NAME).worksheet(SOURCE_SHEET)
         rows = ws.get_all_values()
-        for i, r in enumerate(rows[1:], start=2):  # bỏ header -> bắt đầu từ dòng 2
-            if len(r) > 12 and norm(r[6]) == code:
-                ws.update_cell(i, 13, status)  # cột M là 13 (1-based)
-                logging.info("Đã cập nhật trạng thái '%s' cho mã %s ở dòng %d (sheet NGUON).", status, code, i)
+        for i, row in enumerate(rows[1:], start=2):
+            if len(row) > 12 and norm(row[6]) == code:
+                ws.update_cell(i, 13, status)
+                logging.info("Đã cập nhật '%s' cho mã %s dòng %d (sheet NGUON).", status, code, i)
                 return True
         logging.warning("Không tìm thấy mã %s trong sheet NGUON (cột G).", code)
         return False
     except Exception as e:
-        logging.error("Lỗi khi cập nhật trạng thái sheet NGUON: %s", e)
+        logging.error("Lỗi cập nhật sheet NGUON: %s", e)
         return False
 
 
-# ================== HỖ TRỢ RDP & WINDOW ==================
+def get_all_ready_codes(rows):
+    """Lấy tất cả code cùng kênh, trạng thái OK, lịch hôm nay và giờ > hiện tại."""
+    now = datetime.now()
+    out = []
+    for row in rows[1:]:
+        if len(row) > 61 and norm(row[IDX_CHANNEL_AI]) == CHANNEL_CODE and norm(row[IDX_STATUS_AV]) == STATUS_OK:
+            d = _parse_date(norm(row[IDX_DATE_BI]) or "")
+            t = _parse_time(norm(row[IDX_TIME_BJ]) or "")
+            if not d or not t:
+                continue
+            target_dt = datetime.combine(d, t)
+            if d == now.date() and target_dt > now:
+                code = norm(row[0])
+                if code:
+                    out.append(code)
+    return out
+
+
+def get_tomorrow_codes(rows):
+    """Lấy code có lịch đúng NGÀY MAI."""
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    out = []
+    for row in rows[1:]:
+        if len(row) > 61 and norm(row[IDX_CHANNEL_AI]) == CHANNEL_CODE and norm(row[IDX_STATUS_AV]) == STATUS_OK:
+            d = _parse_date(norm(row[IDX_DATE_BI]) or "")
+            if d and d == tomorrow:
+                code = norm(row[0])
+                if code:
+                    out.append(code)
+    return out
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S8 - QUẢN LÝ FILE & THƯ MỤC                                        │
+# └──────────────────────────────────────────────────────────────────────┘
 
-
-# ================== AUTOMATION TRÌNH DUYỆT ==================
-def open_run_and_execute(command_line):
-    pyautogui.hotkey('win', 'r'); rsleep("small")
-
-    # Thử paste bằng clipboard
-    try:
-        pyperclip.copy(command_line)
-        rsleep("tiny")
-        pyautogui.hotkey('ctrl', 'v')
-        rsleep("tiny")
-    except Exception as e:
-        logging.warning("Paste vào Run bị lỗi: %s -> fallback typewrite", e)
-        pyautogui.typewrite(command_line, interval=0.02)
-
-    pyautogui.press('enter'); rsleep("medium")
-
-
-
-def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85):
-    """Chờ ảnh và click với cơ chế tự động giảm dần độ trùng khớp."""
-    logging.info("Chờ ảnh (click): %s ...", img_path)
-    end = time.time() + timeout_sec
-    
-    # Giảm dần độ trùng khớp qua nhiều mức
-    confidence_levels = [confidence, 0.8, 0.75, 0.7, 0.65, 0.6]
-    
-    while time.time() < end:
-        for conf_level in confidence_levels:
-            try:
-                pos = pyautogui.locateCenterOnScreen(img_path, confidence=conf_level)
-                if pos:
-                    click_once(pos.x, pos.y)
-                    logging.info("Đã click ảnh: %s tại (%d, %d) với độ trùng khớp %.2f", img_path, pos.x, pos.y, conf_level)
-                    return True
-            except Exception:
-                pass
-        time.sleep(r(*RANDOM.retry_screen_interval))
-    
-    logging.error("Không tìm thấy ảnh trong ~%ss: %s (sau khi thử tất cả các mức độ trùng khớp)", timeout_sec, img_path)
-    return False
-def wait_image(img_path, timeout_sec=30, confidence=0.85):
-    """Chờ ảnh xuất hiện (KHÔNG click). Trả về tọa độ tâm nếu thấy, None nếu hết hạn."""
-    logging.info("Chờ ảnh (không click): %s ...", img_path)
-    end = time.time() + timeout_sec
-    last_err = None
-    while time.time() < end:
-        try:
-            pos = pyautogui.locateCenterOnScreen(img_path, confidence=confidence)
-            if pos:
-                logging.info("Đã thấy ảnh: %s tại (%d, %d)", img_path, pos.x, pos.y)
-                return pos
-        except Exception as e:
-            last_err = e
-        time.sleep(r(*RANDOM.retry_screen_interval))
-    if last_err:
-        logging.debug("wait_image last error: %s", last_err)
-    logging.error("Hết thời gian chờ ảnh: %s", img_path)
-    return None
-
-# ================== HỘP THOẠI OPEN ==================
-def file_dialog_select_first_mp4(target_folder):
-    rsleep("long")
-
-    # Thêm: Tìm và click vào filename.png trước
-    logging.info("Tìm và click vào 'filename.png' trước khi nhập đường dẫn...")
-    
-    # Thêm đường dẫn của filename.png vào khai báo ở đầu file
-    # TEMPLATE_FILENAME = os.path.join(ICON_DIR, "filename.png")
-    
-    if not wait_and_click_image(TEMPLATE_FILENAME, timeout_sec=int(r(*RANDOM.click_timeout_sec)), 
-                                confidence=r(*RANDOM.click_confidence)):
-        logging.warning("Không tìm thấy 'filename.png', tiếp tục với Ctrl+L")
-    
-    rsleep("medium")  # Đợi sau khi click
-
-    # 1) Ctrl+L -> dán path -> Enter (đi thẳng tới thư mục mã)
-    pyautogui.hotkey('ctrl', 'l'); rsleep("tiny")
-    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
-    paste_text(target_folder)
-    pyautogui.press('enter'); rsleep("medium")   # chờ thư mục load xong
-
-    # 2) Alt+N -> dán '*.mp4' -> Enter (lọc file mp4)
-    pyautogui.keyDown('alt')
-    pyautogui.press('n')
-    pyautogui.keyUp('alt')
-    rsleep("tiny")
-
-    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
-    paste_text('*.mp4')
-    pyautogui.press('enter'); rsleep("long")
-
-
-    # 3) Chọn file đầu và mở
-    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
-    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
-
-    # Thay vì nhấn Down, dùng Ctrl+A để chọn toàn bộ file (đảm bảo chọn file đầu)
-    pyautogui.press('space'); rsleep("tiny")
-
-    for _ in range(2):
-        pyautogui.press('tab'); rsleep("small")
-    pyautogui.press('enter'); rsleep("long")
-
-
-
-def file_dialog_select_thumbnail():
-    """
-    Hộp thoại Open (chọn thumbnail) đã mở.
-    Theo yêu cầu:
-    - Shift+Tab x2
-    - ArrowDown (chọn ảnh thumb)
-    - Tab x4
-    - Enter (Open)
-    """
-    rsleep("medium")
-    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
-    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
-    pyautogui.press('space'); rsleep("small")   # chọn file thumbnail đầu tiên
-    for _ in range(4):
-        pyautogui.press('tab'); rsleep("tiny")
-    pyautogui.press('enter'); rsleep("long")   # nhấn Open
-
-
-# ================== FLOW NHẬP METADATA ==================
-# CỘT: BB=53, BC=54 (zero-based)
-IDX_TITLE_BB = 53
-IDX_DESC_BC  = 54
-
-def handle_metadata_flow(active_row):
-    """
-    Khi đã thấy trang metadata (có ảnh tiep.png),
-    con trỏ đang ở ô TIÊU ĐỀ:
-    - PASTE TIÊU ĐỀ (BB)
-    - Tab×2 -> PASTE MÔ TẢ (BC)
-    - Tab×2 -> NHẤN END -> Enter (mở hộp thoại chọn thumbnail)
-    - Chọn thumbnail theo phím
-    - Tab×2 -> Enter -> Tab -> Space -> Tab×2 -> Enter (chọn playlist)
-    - Click tiep.png để sang bước 2
-    """
-    title = norm(active_row[IDX_TITLE_BB]) if len(active_row) > IDX_TITLE_BB else ""
-    desc  = norm(active_row[IDX_DESC_BC])  if len(active_row) > IDX_DESC_BC  else ""
-    
-    logging.info("Dán TIÊU ĐỀ (BB): %s", (title or "(rỗng)"))
-    # Nghỉ thêm cho chắc (đợi UI load xong)
-    rsleep("long")   # hoặc "long" nếu RDP lag nhiều
-    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")   # quét sạch nội dung cũ
-    paste_text(title or "")
-    
-    # Tab×2 -> vào MÔ TẢ
-    pyautogui.press('tab'); rsleep("tiny")
-    pyautogui.press('tab'); rsleep("tiny")
-    pyautogui.press('tab'); rsleep("tiny")
-    rsleep("small")
-    
-    logging.info("Dán MÔ TẢ (BC).")
-    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")   # quét sạch nội dung cũ
-    paste_text(desc or "")
-    
-    # (NEW) Enter trước để thoát/commit ô mô tả
-    pyautogui.press('enter'); rsleep("tiny")
-    # Tab×2 -> khung chọn THUMBNAIL
-    pyautogui.press('tab'); rsleep("tiny")
-    pyautogui.press('tab'); rsleep("tiny")
-    rsleep("small")
-    
-    # === THAY ĐỔI: NHẤN END TRƯỚC KHI ENTER ĐỂ MỞ HỘP THOẠI CHỌN THUMBNAIL ===
-    logging.info("Nhấn END để cuộn xuống cuối trang trước khi chọn thumbnail...")
-    pyautogui.press('end'); rsleep("small")
-    # Nhấn thêm lần nữa để đảm bảo
-    pyautogui.press('end'); rsleep("medium")  # Nghỉ lâu hơn để đảm bảo trang đã cuộn xong
-    
-    # Enter -> mở Open
-    pyautogui.press('enter'); rsleep("small")
-    
-    # Chờ hộp thoại Open hiện (open.png) rồi mới thao tác chọn thumbnail
-    pos_thumb_open = wait_image(TEMPLATE_OPEN_READY, timeout_sec=int(r(*RANDOM.click_timeout_sec)),
-                                confidence=r(*RANDOM.click_confidence))
-    if pos_thumb_open:
-        file_dialog_select_thumbnail()
-    else:
-        logging.error("Không thấy hộp thoại Open (open.png) khi chọn thumbnail.")
-        return
-    
-    # === SAU KHI CHỌN THUMBNAIL: CHỌN DANH SÁCH PHÁT THEO ANCHOR ẢNH ===
-    logging.info("Chờ anchor 'danhsachphat.png' (khu chọn danh sách phát)...")
-    pos_dsp = wait_image(TEMPLATE_DANHSACHPHAT,
-                         timeout_sec=int(r(*RANDOM.click_timeout_sec)),
-                         confidence=r(*RANDOM.click_confidence))
-    if not pos_dsp:
-        logging.error("Không tìm thấy 'danhsachphat.png' ⇒ bỏ qua bước chọn danh sách phát.")
-    else:
-        # Đảm bảo focus đúng vùng danh sách phát
-        move_click(pos_dsp.x, pos_dsp.y); rsleep("small")
-        
-        # B1) Tab 1 lần → Enter (mở danh sách phát)
-        pyautogui.press('tab'); rsleep("tiny")
-        pyautogui.press('enter'); rsleep("small")
-        
-        # B2) Tab 2 lần → Enter (chốt/áp dụng danh sách phát)
-        pyautogui.press('tab'); rsleep("tiny")
-        pyautogui.press('tab'); rsleep("tiny")
-        pyautogui.press('enter'); rsleep("small")
-    
-    # === Cuối cùng: Click 'Tiếp' để sang bước 2 ===
-    logging.info("Tìm và click nút 'Tiếp' để qua Bước 2...")
-    pos = wait_image(TEMPLATE_NEXT_BTN,
-                     timeout_sec=int(r(*RANDOM.click_timeout_sec)),
-                     confidence=r(*RANDOM.click_confidence))
-    if pos:
-        click_once(pos.x, pos.y)
-    else:
-        logging.warning("Không tìm thấy nút 'Tiếp' sau khi nhập metadata.")
-def file_dialog_select_srt():
-    """
-    Hộp thoại Open (chọn SRT) đã mở.
-    Thêm bước click filename.png trước khi dán đường dẫn SRT.
-    """
-    # Thêm bước: Tìm và click vào filename.png trước khi nhập
-    logging.info("Tìm và click vào 'filename.png' trước khi nhập tìm kiếm SRT...")
-    if not wait_and_click_image(TEMPLATE_FILENAME, timeout_sec=int(r(*RANDOM.click_timeout_sec)), 
-                              confidence=r(*RANDOM.click_confidence)):
-        logging.warning("Không tìm thấy 'filename.png', tiếp tục với nhập trực tiếp")
-    
-    rsleep("small")  # Đợi sau khi click
-    
-    # Tiếp tục với phần nhập tìm kiếm SRT như trước
-    paste_text('*.srt'); rsleep("tiny")
-    pyautogui.press('enter'); rsleep("small")
-    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
-    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
-    pyautogui.press('space'); rsleep("medium")   # chọn file đầu (đợi lâu hơn chút)
-    for _ in range(4):
-        pyautogui.press('tab'); rsleep("tiny")
-    pyautogui.press('enter'); rsleep("long")
-
-
-def handle_step2_flow(active_row):
-    CLICK_TIMEOUT_SEC = int(r(*RANDOM.click_timeout_sec))
-    CLICK_CONFIDENCE  = r(*RANDOM.click_confidence)
-    STEP2_TIMEOUT_SEC = int(r(*RANDOM.step2_load_timeout_sec))
-
-    def press(key, n=1, bucket="tiny"):
-        for _ in range(n):
-            pyautogui.press(key); rsleep(bucket)
-
-    # 0) Vào Bước 2 (ưu tiên buoc2.png, fallback them.png)
-    logging.info("Vào Bước 2 (anchor buoc2.png, fallback them.png)...")
-    pos_buoc2 = wait_image(TEMPLATE_BUOC2, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if not pos_buoc2:
-        logging.info("Không thấy buoc2.png → thử them.png")
-        pos_them = wait_image(TEMPLATE_STEP2_THEM, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-        if not pos_them:
-            logging.error("Không thấy buoc2.png / them.png ⇒ chưa vào Bước 2.")
-            return
-        pos_buoc2 = pos_them  # dùng tạm làm anchor click
-
-    # 1) Lặp: click buoc2.png → nghỉ → click lại → Tab×4 → Enter
-    #    Nếu KHÔNG thấy 'taiteplen.png' thì lặp lại chu trình trên.
-    MAX_TRIES = 5
-    for attempt in range(1, MAX_TRIES + 1):
-        logging.info(f"[B2 focus try {attempt}/{MAX_TRIES}] click buoc2.png → nghỉ → click lại → Tab×4 → Enter")
-        move_click(pos_buoc2.x, pos_buoc2.y); rsleep("small")   # click 1
-
-
-        press('tab', 4, "tiny")
-        pyautogui.press('enter'); rsleep("small")
-
-        # Kiểm tra taiteplen.png đã hiện chưa
-        logging.info("Kiểm tra 'taiteplen.png' sau Enter...")
-        pos_tlp = wait_image(TEMPLATE_TAITEPLEN, timeout_sec=10, confidence=CLICK_CONFIDENCE)
-        if pos_tlp:
-            logging.info("ĐÃ thấy 'taiteplen.png' → tiếp tục các bước tiếp theo.")
-            break
-        else:
-            logging.warning("Chưa thấy 'taiteplen.png' → lặp lại click buoc2.png → Tab×4 → Enter.")
-            # tìm lại anchor (phòng bị trôi UI)
-            pos_buoc2 = wait_image(TEMPLATE_BUOC2, timeout_sec=15, confidence=CLICK_CONFIDENCE) or \
-                        wait_image(TEMPLATE_STEP2_THEM, timeout_sec=5, confidence=CLICK_CONFIDENCE)
-            if not pos_buoc2:
-                logging.error("Mất anchor buoc2.png/them.png → dừng Bước 2.")
-                return
-    else:
-        logging.error(f"Sau {MAX_TRIES} lần vẫn không thấy 'taiteplen.png' → dừng Bước 2.")
-        return
-
-    # B) (NEW) Chờ thấy vùng/nút 'Tải tệp lên' của phụ đề (taiteplen.png)
-    logging.info("Chờ 'taiteplen.png' (vùng Tải tệp lên phụ đề)...")
-    if not wait_image(TEMPLATE_TAITEPLEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
-        logging.error("Không thấy 'taiteplen.png' ⇒ không thể mở khu tải phụ đề.")
-        return
-
-    # C) (NEW) Sau khi thấy 'taiteplen.png', chờ 1 nhịp cho UI ổn định
-    rsleep("long")
-
-    # D) (NEW) Click trực tiếp 'taiteplen.png' → đợi load → (đổi: click 'tieptuc.png' thay vì Tab×3→Enter)
-    pos_tlp = wait_image(TEMPLATE_TAITEPLEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if not pos_tlp:
-        logging.error("Không thấy 'taiteplen.png' ⇒ không thể mở khu tải phụ đề.")
-        return
-
-    move_click(pos_tlp.x, pos_tlp.y)
-    rsleep("long")  # đợi UI ổn định
-
-    # === THAY ĐỔI Ở ĐÂY: tìm và click 'tieptuc.png' để mở hộp thoại Open ===
-    logging.info("Tìm và click 'tieptuc.png' để mở hộp thoại Open (SRT)...")
-    if not wait_and_click_image(TEMPLATE_TIEPTUC, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
-        logging.warning("Không thấy 'tieptuc.png' → fallback Tab×3 rồi Enter.")
-        pyautogui.press('tab'); rsleep("tiny")
-        pyautogui.press('tab'); rsleep("tiny")
-        pyautogui.press('tab'); rsleep("tiny")
-        pyautogui.press('enter'); rsleep("long")
-    else:
-        rsleep("long")  # cho UI mở hộp thoại xong
-
-
-    # E) Hộp thoại Open: phải thấy open.png rồi mới gõ *.srt
-    pos_open = wait_image(TEMPLATE_OPEN_READY, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if not pos_open:
-        logging.error("Không thấy open.png khi thêm SRT.")
-        return
-    file_dialog_select_srt()
-
-    # F) Xử lý upload SRT: đợi 'xong.png' rồi click
-    logging.info("Chờ 'xong.png' sau khi upload SRT...")
-    pos_done = wait_image(TEMPLATE_DONE, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if not pos_done:
-        logging.error("Không thấy xong.png sau khi thêm SRT.")
-        return
-    # nghỉ thêm cho chắc trước khi click
-    rsleep("medium")
-    move_click(pos_done.x, pos_done.y); rsleep("medium")
-
-    # G) Sau khi ấn 'xong', PHẢI thấy trở về màn 'Màn hình kết thúc' (manhinhketthuc.png) rồi mới Tab
-    logging.info("Chờ 'manhinhketthuc.png' (đã về trang mục Màn hình kết thúc)...")
-    if not wait_image(TEMPLATE_ENDSCREEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
-        logging.error("Không thấy manhinhketthuc.png sau khi thêm SRT.")
-        return
-
-    # H) MỞ EDITOR END SCREEN (giữ nguyên)
-    pyautogui.press('tab'); rsleep("tiny")
-    pyautogui.press('tab'); rsleep("tiny")
-    pyautogui.press('enter'); rsleep("medium")   # mở editor màn hình kết thúc
-
-    # ====== BẮT ĐẦU CHUỖI THAO TÁC MỚI BÊN TRONG EDITOR ======
-
-    # Helper nhỏ cho gọn
-    def press(key, n=1, bucket="tiny"):
-        for _ in range(n):
-            pyautogui.press(key); rsleep(bucket)
-
-    # (MỚI) Nghỉ 1 nhịp cho editor load ổn định
-    rsleep("medium")
-
-    # (MỚI) Click vào nút/ô 'chọn màn hình kết thúc' trong editor, rồi Tab × 3 để đưa focus tới slot đầu
-    if not wait_and_click_image(TEMPLATE_CHON_ENDSCREEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
-        logging.error("Không thấy 'chonmanhinhketthuc.png' trong editor End screen.")
-        return
-    press('tab', 3, "tiny")
-
-
-    # 2) Enter 2 lần để chọn Video 1
-    press('enter', 2, "small")
-
-    # 3) Enter 2 lần nữa để chọn Video 2
-    press('enter', 2, "small")
-
-    # 4) Enter 1 lần → gõ 'd' (jump to "Danh sách phát") → Enter → Tab ×3 → Enter
-    press('enter', 1, "small")     # mở menu lựa chọn
-    rsleep("tiny")
-    pyautogui.press('d')           # gõ ký tự 'd' để nhảy đến "Danh sách phát"
-    rsleep("tiny")
-    press('enter', 1, "small")     # chọn "Danh sách phát"
-    press('tab', 3, "tiny")        # di chuyển tới nút xác nhận/áp dụng
-    press('enter', 1, "small")     # xác nhận
-
-
-    # 5) Enter 1 lần → click trực tiếp vào ảnh 'dangky.png' → Enter
-    press('enter', 1, "small")
-
-    pos_dangky = wait_image(TEMPLATE_DANGKY, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if pos_dangky:
-        move_click(pos_dangky.x, pos_dangky.y)
-        rsleep("small")
-    else:
-        logging.error("Không thấy 'dangky.png' ⇒ bỏ qua bước chọn Đăng ký.")
-
-
-    # ====== KẾT THÚC CHUỖI THAO TÁC MỚI ======
-
-    # J) Đợi 'luu.png' rồi click Lưu (chờ lâu hơn vì render)
-    logging.info("Chờ 'luu.png' để lưu màn hình kết thúc...")
-    pos_save = wait_image(TEMPLATE_SAVE, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if not pos_save:
-        logging.error("Không thấy luu.png để lưu màn hình kết thúc.")
-        return
-    move_click(pos_save.x, pos_save.y); rsleep("medium")
-
-
-
-    # ====== BẮT ĐẦU: THÊM THẺ (CARDS) SAU KHI LƯU END SCREEN ======
-
-    # 0) Chờ 'ketthucok.png' xuất hiện để chắc chắn đang ở màn hình kết thúc
-    logging.info("Chờ 'ketthucok.png' xác nhận đã ở màn 'Màn hình kết thúc'...")
-    if not wait_image(TEMPLATE_KETTHUC_OK, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
-        logging.error("Không thấy 'ketthucok.png' sau khi Lưu End Screen.")
-        return
-    rsleep("small")
-
-    # 1) Tab 1 lần → Enter để vào thêm thẻ
-    press('tab', 1, "tiny")
-    pyautogui.press('enter'); rsleep("small")  # mở giao diện 'Thêm thẻ' (Cards)
-    rsleep("small")  # chờ UI hiện ra
-
-    # Helper: tìm & click ảnh 'the.png'
-    def click_the_button(step_tag="the_button"):
-        """
-        Tìm và click chính xác vào TEMPLATE_THE (the.png).
-        - Chỉ click 1 lần.
-        - Chuyển tọa độ physical->logical bằng _to_logical.
-        - Không kéo chuột ra xa (loại bỏ moveRel gây lệch).
-        - Ghi log physical & logical để debug nếu click sai.
-        """
-        logging.info("Tìm và click 'the.png' (nút Thẻ)...")
-
-        # Park chuột ra xa trước khi dò ảnh để tránh overlay che template (nhưng rất nhanh)
-        try:
-            pyautogui.moveTo(10, 10, duration=min(0.2, r(*RANDOM.mouse_move)))
-            rsleep("tiny")
-        except Exception:
-            pass
-
-        pos_the = wait_image(TEMPLATE_THE, timeout_sec=int(r(*RANDOM.step2_load_timeout_sec)),
-                            confidence=r(*RANDOM.click_confidence))
-        if not pos_the:
-            logging.error(f"Không thấy 'the.png' tại bước {step_tag}.")
-            return False
-
-        # Convert physical -> logical coords để click chính xác trong môi trường có scaling/RDP
-        try:
-            lx, ly = _to_logical(pos_the.x, pos_the.y)
-        except Exception as e:
-            logging.warning("Lỗi khi chuyển physical->logical coords: %s — sẽ dùng trực tiếp coords.", e)
-            lx, ly = pos_the.x, pos_the.y
-
-        logging.info("Click 'the.png' physical=(%d,%d) -> logical=(%d,%d)", pos_the.x, pos_the.y, lx, ly)
-
-        # Click đúng 1 lần vào tọa độ đã chuyển
-        try:
-            pyautogui.moveTo(lx, ly, duration=min(0.15, r(*RANDOM.mouse_move)))
-            pyautogui.click()
-        except Exception as e:
-            logging.error("Click vào 'the.png' thất bại: %s", e)
-            return False
-
-        rsleep("small")
-        return True
-
-
-
-    # (MỚI) Helper: thêm đúng 1 playlist card
-    def add_single_playlist_card():
-        """
-        - Click 'Thẻ'
-        - Tab ×4 → Enter (mở menu loại thẻ)
-        - Đợi 1 nhịp
-        - Tab ×3 → Enter (Thêm danh sách phát)
-        """
-        if not click_the_button(step_tag="playlist_open"):
-            return False
-        press('tab', 4, "tiny")
-        pyautogui.press('enter'); rsleep("small")     # mở menu loại thẻ
-        rsleep("small")                               # nghỉ 1 chút cho menu bung hẳn
-        press('tab', 3, "tiny")
-        pyautogui.press('enter'); rsleep("medium")    # chọn 'Thêm danh sách phát'
-        rsleep("small")
-        return True
-
-    def click_the1_button(step_tag="the1_button"):
-        """
-        An toàn hơn: chờ the1.png, click exactly 1 lần (convert DPI), rồi đợi UI ổn định.
-        Trả về True nếu click được, False nếu không thấy the1.png.
-        """
-        logging.info("Tìm và click 'the1.png' (the1)...")
-        pos = wait_image(TEMPLATE_THE1, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-        if not pos:
-            logging.error(f"Không thấy 'the1.png' tại bước {step_tag}.")
-            return False
-
-        # click 1 lần chính xác
-        try:
-            click_once(pos.x, pos.y)
-        except Exception as e:
-            logging.error("Click the1.png thất bại: %s", e)
-            return False
-
-        # đợi UI ổn định trước khi tiếp tục (rất quan trọng)
-        rsleep("tiny")
-
-        # (Tùy chọn) nếu có template/menu xác nhận xuất hiện sau khi click the1, chờ nó:
-        # EX: nếu bạn có TEMPLATE_THE_MENU (hình menu bật ra), uncomment dòng dưới
-        # if not wait_image(TEMPLATE_THE_MENU, timeout_sec=5, confidence=CLICK_CONFIDENCE):
-        #     logging.warning("Menu sau khi click the1 không xuất hiện (vẫn tiếp tục với Tab)...")
-
-        return True
-
-
-
-    # (MỚI) Helper: thêm 1 video card theo link ở 1 cột (BD/BE/BF/BG)
-    def add_single_video_card_from_column(active_row, idx_col, col_name=""):
-        """
-        - Click 'Thẻ'
-        - Tab ×4 → Enter ×2 (vào 'Thêm video')
-        - Nghỉ 1 chút → tìm 'chonmotvideocuthe.png' → click
-        - Tab ×3 → dán link (BD/BE/BF/BG)
-        - Chờ 'tagvideo.png' → click
-        """
-        link = norm(active_row[idx_col]) if len(active_row) > idx_col else ""
-        if not link:
-            logging.warning("Cột %s rỗng, bỏ qua thẻ video.", col_name or f"idx {idx_col}")
-            return False
-
-        # Click trực tiếp the1.png rồi Tab → Enter
-        if not click_the1_button(step_tag=f"video_{col_name or idx_col}__open_the1"):
-            return False
-
-        rsleep("tiny")                 # đợi UI nhận click
-        press('tab', 1, "tiny")
-        pyautogui.press('enter'); rsleep("medium")
-
-
-        # Đợi nhẹ + tìm 'Chọn một video cụ thể'
-        rsleep("small")
-        pos_choose = wait_image(TEMPLATE_CHONVIDEO_CUTHE, timeout_sec=int(r(*RANDOM.step2_load_timeout_sec)),
-                                confidence=r(*RANDOM.click_confidence))
-        if not pos_choose:
-            logging.error("Không thấy 'chonmotvideocuthe.png' → bỏ qua thẻ video %s.", col_name or idx_col)
-            return False
-        click_once(pos_choose.x, pos_choose.y)
-
-        # Tab ×3 → ô link → paste
-        press('tab', 3, "tiny")
-        paste_text(link); rsleep("small")
-
-        # Chờ gợi ý video và click
-        logging.info("Chờ 'tagvideo.png' để chọn video gợi ý...")
-        pos_tag = wait_image(TEMPLATE_TAGVIDEO, timeout_sec=int(r(*RANDOM.step2_load_timeout_sec)),
-                            confidence=r(*RANDOM.click_confidence))
-        if not pos_tag:
-            logging.error("Không thấy 'tagvideo.png' sau khi dán link video %s.", col_name or idx_col)
-            return False
-        click_once(pos_tag.x, pos_tag.y)
-        rsleep("medium")
-        return True
-
-    # ——— THEO YÊU CẦU MỚI: 1 PLAYLIST + 4 VIDEO ———
-
-    # 1. Thêm 1 playlist
-    if not add_single_playlist_card():
-        logging.warning("Thêm playlist card thất bại — vẫn tiếp tục với video cards.")
-
-    # 2. Thêm 4 video card theo BD, BE, BF, BG
-    add_single_video_card_from_column(active_row, IDX_LINK_BD, col_name="BD")
-    add_single_video_card_from_column(active_row, IDX_LINK_BE, col_name="BE")
-    add_single_video_card_from_column(active_row, IDX_LINK_BF, col_name="BF")
-    add_single_video_card_from_column(active_row, IDX_LINK_BG, col_name="BG")
-
-    # 3) Thêm các mốc thời gian (timestamp) cho thẻ:
-    # Yêu cầu: mỗi lần click 'the.png' → Tab 5 lần → nhập thời điểm → Tab (xác nhận)
-    def add_timestamp_hhmmss(ts_value: str, step_label: str):
-        if not click_the_button(step_tag=f"timestamp_{step_label}"):
-            return False
-        press('tab', 5, "tiny")
-        paste_text(ts_value); rsleep("tiny")
-        pyautogui.press('tab'); rsleep("small")
-        return True
-
-    # Lần lượt: 30:00:00, 10:00:00, 15:00:00, 20:00:00, 25:00:00
-    add_timestamp_hhmmss("30:00:00", "30h")
-    add_timestamp_hhmmss("10:00:00", "10m")
-    add_timestamp_hhmmss("15:00:00", "15m")
-    add_timestamp_hhmmss("20:00:00", "20m")
-    add_timestamp_hhmmss("25:00:00", "25m")
-
-    # 4) Chờ một chút rồi lưu (thao tác Lưu của phần Thẻ cũng dùng lại luu.png)
-    rsleep("small")
-    logging.info("Chờ 'luu.png' để lưu các thẻ (Cards)...")
-    pos_save_cards = wait_image(TEMPLATE_SAVE, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if not pos_save_cards:
-        logging.error("Không thấy luu.png để lưu các thẻ.")
-        return
-    move_click(pos_save_cards.x, pos_save_cards.y); rsleep("medium")
-
-    # ====== KẾT THÚC: THÊM THẺ (CARDS) ======
-
-
-
-
-    # ====== BỎ LUỒNG ẤN "TIẾP" - NHẢY THẲNG SANG BƯỚC HẸN LỊCH ======
-    logging.info("Click 'Chế độ hiển thị' để sang thẳng bước hẹn lịch (bỏ qua Step 3)...")
-    pos_cdhien = wait_image(TEMPLATE_CHEDO_HIEN_THI, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if not pos_cdhien:
-        logging.error("Không thấy 'chedohienthi.png' ⇒ không thể sang màn hẹn lịch.")
-        return False
-    move_click(pos_cdhien.x, pos_cdhien.y)
-    rsleep("long")
-    return True   # báo là đã sang màn hẹn lịch luôn
-
-
-def handle_step3_4_flow(active_row, client, code):
-    """
-    Bước 3: Tìm và click trực tiếp vào henlich.png để vào màn hẹn lịch
-    Sau đó: Sử dụng Tab để điều hướng đến ô ngày/giờ như trước
-    """
-    CLICK_TIMEOUT_SEC = int(r(*RANDOM.click_timeout_sec))
-    
-    logging.info("Tìm và click trực tiếp vào 'henlich.png' để vào màn hẹn lịch...")
-    
-    # Thêm đường dẫn tới ảnh henlich.png - bạn cần thêm ảnh này vào thư mục icon
-    TEMPLATE_HENLICH = os.path.join(ICON_DIR, "henlich.png")
-    
-    # Tìm và click vào henlich.png
-    if not wait_and_click_image(TEMPLATE_HENLICH, timeout_sec=CLICK_TIMEOUT_SEC):
-        logging.error("Không tìm thấy 'henlich.png' ⇒ không thể vào màn hẹn lịch.")
-        return False
-    
-    logging.info("Đã vào màn hẹn lịch, đợi UI ổn định...")
-    rsleep("medium")  # Đợi UI ổn định
-    
-    # Sau khi click vào henlich.png, dùng Tab để điều hướng đến ô ngày như trước
-    for _ in range(8):
-        pyautogui.press('tab'); rsleep("tiny")
-
-    pyautogui.press('enter'); rsleep("small")  # giờ con trỏ ở ô Ngày
-    
-    # Dán ngày từ cột BI
-    date_val = norm(active_row[IDX_DATE_BI]) if len(active_row) > IDX_DATE_BI else ""
-    logging.info("Dán NGÀY (BI): %s", date_val or "(rỗng)")
-    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
-    paste_text(date_val or "")
-    pyautogui.press('enter'); rsleep("small")
-
-    # Dán giờ từ cột BJ bằng cách click ảnh time.png → Ctrl+A → paste
-    time_val = norm(active_row[IDX_TIME_BJ]) if len(active_row) > IDX_TIME_BJ else ""
-    logging.info("Dán GIỜ (BJ): %s", time_val or "(rỗng)")
-
-    pos_time = wait_image(TEMPLATE_TIME, timeout_sec=CLICK_TIMEOUT_SEC)
-    if not pos_time:
-        logging.error("Không thấy 'time.png' (ô Giờ).")
-        return False
-
-    # click thẳng vào chính giữa ô giờ (không lệch nữa)
-    move_click(pos_time.x, pos_time.y)
-    rsleep("small")
-
-    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
-    paste_text(time_val or "")
-    pyautogui.press('enter'); rsleep("small")
-
-    # Click nút Lên lịch
-    logging.info("Tìm và click 'lenlich.png' để xác nhận hẹn lịch...")
-    pos_publish = wait_image(TEMPLATE_SCHEDULE_PUBLISH, timeout_sec=CLICK_TIMEOUT_SEC)
-    if not pos_publish:
-        logging.error("Không thấy lenlich.png (nút Lên lịch).")
-        return False
-
-    move_click(pos_publish.x, pos_publish.y)
-    rsleep("medium")
-
-    # ✅ CẬP NHẬT TRẠNG THÁI NGAY KHI BẤM 'LÊN LỊCH'
-    try:
-        update_source_status(client, code, "ĐÃ ĐĂNG")
-        logging.info("Đã cập nhật trạng thái 'ĐÃ ĐĂNG' cho mã %s ngay sau khi bấm Lên lịch.", code)
-    except Exception as e:
-        logging.warning("Cập nhật trạng thái ngay sau khi bấm Lên lịch bị lỗi: %s", e)
-
-    # ⏳ Vẫn chờ 10 phút rồi mới xử lý mã tiếp theo
-    logging.info("Chờ 10 phút để YouTube xử lý trước khi chuyển sang mã kế.")
-    time.sleep(10 * 60)
-
-    return True
-
-
-
-
-# --- Helpers kiểm tra file & ổn định thư mục ---
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
+
 def has_required_files(dir_path: str) -> bool:
-    """Trong dir_path phải có ≥1 .mp4, ≥1 .srt, ≥1 ảnh (jpg/jpeg/png/webp)."""
+    """Kiểm tra thư mục có đủ: >=1 mp4, >=1 srt, >=1 ảnh."""
     if not os.path.isdir(dir_path):
         return False
     names = os.listdir(dir_path)
@@ -987,14 +484,8 @@ def has_required_files(dir_path: str) -> bool:
     return has_mp4 and has_srt and has_img
 
 
-
-# --- helper tính thống kê bộ bắt buộc (mp4 + srt + ảnh) ---
 def get_required_stats(dir_path: str):
-    """
-    Trả về (count, total_bytes) của các file thuộc 'bộ bắt buộc':
-    - .mp4, .srt và ảnh (IMG_EXTS).
-    Dùng để so sánh nhanh server ↔ local.
-    """
+    """Trả về (count, total_bytes) của mp4 + srt + ảnh."""
     if not os.path.isdir(dir_path):
         return (0, 0)
     total = 0
@@ -1010,322 +501,918 @@ def get_required_stats(dir_path: str):
                 except Exception:
                     pass
     return (count, total)
-# --- ensure_local_folder có thêm kiểm tra dung lượng ---
+
+
 def ensure_local_folder(code, delete_server=True):
-    """
-    Đảm bảo LOCAL_DONE_ROOT\\{code} có đủ mp4+srt+ảnh.
-    Thêm: nếu local 'đủ bộ' nhưng (count, bytes) KHÁC server → copy lại.
-    """
+    """Đảm bảo thư mục local có đủ file. Copy từ server nếu cần."""
     local_folder  = os.path.join(LOCAL_DONE_ROOT, code)
     server_folder = os.path.join(SERVER_DONE_ROOT, code)
 
     local_enough  = os.path.isdir(local_folder) and has_required_files(local_folder)
     server_enough = has_required_files(server_folder)
 
-    # Nếu local đã đủ bộ:
     if local_enough:
-        # Nếu server cũng đủ bộ thì so thống kê; khác là copy lại
         if server_enough:
             lc = get_required_stats(local_folder)
             sc = get_required_stats(server_folder)
             if lc != sc:
-                logging.info(f"♻️ Local khác dung lượng/bộ so với server ({lc} != {sc}) → refresh từ server.")
+                logging.info(f"Local khac server ({lc} != {sc}) -> refresh tu server.")
             else:
-                logging.info(f"✅ Local đã đủ bộ và khớp server: {local_folder}")
+                logging.info(f"Local da du bo va khop server: {local_folder}")
                 return True
         else:
-            # Server thiếu hoặc không có → coi như local dùng được
-            logging.info(f"✅ Local đã đủ bộ; server không sẵn. Giữ nguyên: {local_folder}")
+            logging.info(f"Local da du bo; server khong san. Giu nguyen: {local_folder}")
             return True
 
-    # Đến đây: hoặc local thiếu, hoặc local đủ nhưng stats khác server → cần copy từ server
     if not server_enough:
-        logging.error(f"❌ Server thiếu bộ hoặc không có thư mục: {server_folder}")
+        logging.error(f"Server thieu bo hoac khong co: {server_folder}")
         return False
 
-    # Copy thẳng: xoá local cũ (nếu có), rồi copytree
     try:
         if os.path.exists(local_folder):
             shutil.rmtree(local_folder, ignore_errors=True)
         shutil.copytree(server_folder, local_folder)
-        logging.info(f"📥 Đã copy {server_folder} → {local_folder}")
+        logging.info(f"Da copy {server_folder} -> {local_folder}")
     except Exception as e:
-        logging.error(f"❌ Lỗi copy {server_folder} → {local_folder}: {e}")
+        logging.error(f"Loi copy {server_folder} -> {local_folder}: {e}")
         return False
 
-    # Xác nhận local đủ bộ sau copy
     if not has_required_files(local_folder):
-        logging.error(f"❌ Sau copy, local vẫn thiếu bộ: {local_folder}")
+        logging.error(f"Sau copy, local van thieu bo: {local_folder}")
         return False
 
-    # (Tuỳ chọn) xoá server để dọn
     if delete_server:
         try:
             shutil.rmtree(server_folder)
-            logging.info(f"🗑️ Đã xoá thư mục server: {server_folder}")
+            logging.info(f"Da xoa thu muc server: {server_folder}")
         except Exception as e:
-            logging.warning(f"⚠️ Không xoá được server {server_folder}: {e}")
+            logging.warning(f"Khong xoa duoc server {server_folder}: {e}")
 
     return True
 
-def get_all_ready_codes(rows):
-    """Lấy tất cả code cùng kênh, trạng thái OK, lịch hôm nay và giờ còn > hiện tại."""
-    now = datetime.now()
-    out = []
-    for r in rows[1:]:
-        if len(r) > 61 and norm(r[34]) == CHANNEL_CODE and norm(r[47]) == STATUS_OK:
-            d = _parse_date(norm(r[60]) or "")  # BI
-            t = _parse_time(norm(r[61]) or "")  # BJ
-            if not d or not t:
-                continue
-            target_dt = datetime.combine(d, t)
-            if d == now.date() and target_dt > now:
-                code = norm(r[0])
-                if code:
-                    out.append(code)
-    return out
+
+def cleanup_posted_codes():
+    """Xóa thư mục local của các mã đã 'ĐÃ ĐĂNG'."""
+    logging.info("Don cac ma da dang...")
+    client = gs_client()
+    ws = client.open(SPREADSHEET_NAME).worksheet(INPUT_SHEET)
+    rows = ws.get_all_values()
+
+    for row in rows[1:]:
+        code = row[0].strip() if len(row) > 0 else ""
+        status = row[STATUS_COL - 1].strip() if len(row) >= STATUS_COL else ""
+        if code and status.upper() == "ĐÃ ĐĂNG":
+            folder_path = os.path.join(LOCAL_DONE_ROOT, code)
+            if os.path.isdir(folder_path):
+                try:
+                    shutil.rmtree(folder_path)
+                    logging.info(f"Da xoa: {folder_path}")
+                except Exception as e:
+                    logging.warning(f"Khong xoa duoc {folder_path}: {e}")
 
 
-def get_tomorrow_codes(rows):
-    """Lấy tất cả code (đúng CHANNEL_CODE, STATUS_OK) có lịch đúng NGÀY MAI (BI)."""
-    tomorrow = datetime.now().date() + timedelta(days=1)
-    out = []
-    for r in rows[1:]:
-        if len(r) > 61 and norm(r[34]) == CHANNEL_CODE and norm(r[47]) == STATUS_OK:
-            d = _parse_date(norm(r[60]) or "")  # BI
-            if d and d == tomorrow:
-                code = norm(r[0])
-                if code:
-                    out.append(code)
-    return out
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S9 - AUTOMATION TRÌNH DUYỆT                                         │
+# └──────────────────────────────────────────────────────────────────────┘
+
+def open_run_and_execute(command_line):
+    """Win+R → paste lệnh → Enter."""
+    pyautogui.hotkey('win', 'r')
+    rsleep("small")
+    try:
+        pyperclip.copy(command_line)
+        rsleep("tiny")
+        pyautogui.hotkey('ctrl', 'v')
+        rsleep("tiny")
+    except Exception as e:
+        logging.warning("Paste vao Run bi loi: %s -> fallback typewrite", e)
+        pyautogui.typewrite(command_line, interval=0.02)
+    pyautogui.press('enter')
+    rsleep("medium")
 
 
+def close_browsers_gently_in_rdp():
+    """Đóng trình duyệt 3 lớp: nhẹ → mạnh → taskkill."""
+    # Xóa temp
+    logging.info("Xoa cac file trong thu muc temp...")
+    open_run_and_execute('cmd /c del /q /f /s "%temp%\\*.*" >nul 2>&1')
+    rsleep("small")
 
-# ================== MAIN ==================
+    exebase = os.path.splitext(os.path.basename(RUN_BROWSER_EXE))[0]
+
+    # Lần 1: đóng nhẹ bằng CloseMainWindow()
+    ps_close = (
+        "$names=@('chrome','msedge','firefox','{ex}');"
+        "$procs=Get-Process -ErrorAction SilentlyContinue | ?{{ $names -contains $_.ProcessName }};"
+        "foreach($p in $procs){{ if($p.MainWindowHandle -ne 0){{ $null=$p.CloseMainWindow() }} }}"
+    ).format(ex=exebase)
+    open_run_and_execute(f'powershell -NoProfile -WindowStyle Hidden -Command "{ps_close}"')
+    rsleep("small")
+
+    # Lần 2: Stop-Process -Force
+    ps_kill = (
+        "$names=@('chrome','msedge','firefox','{ex}');"
+        "foreach($n in $names){{ $p=Get-Process -Name $n -ErrorAction SilentlyContinue; if($p){{ $p | Stop-Process -Force }}}};"
+        "$pf=Get-Process -ErrorAction SilentlyContinue | Where-Object {{ $_.ProcessName -like 'firefox*' }}; if($pf){{ $pf | Stop-Process -Force }};"
+    ).format(ex=exebase)
+    open_run_and_execute(f'powershell -NoProfile -WindowStyle Hidden -Command "{ps_kill}"')
+    rsleep("small")
+
+    # Lần 3: taskkill mạnh
+    exename = os.path.basename(RUN_BROWSER_EXE)
+    skill = (
+        'cmd /c '
+        'taskkill /F /IM chrome.exe /T 2>nul & '
+        'taskkill /F /IM msedge.exe /T 2>nul & '
+        'taskkill /F /IM firefox.exe /T 2>nul & '
+        'taskkill /F /IM "{ex}" /T 2>nul'
+    ).format(ex=exename)
+    open_run_and_execute(skill)
+    rsleep("small")
+
+
+def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85):
+    """Chờ ảnh xuất hiện rồi click. Tự giảm dần confidence.
+    Click ngẫu nhiên TRONG PHẠM VI ẢNH (không ra ngoài)."""
+    logging.info("Cho anh (click): %s ...", os.path.basename(img_path))
+    end = time.time() + timeout_sec
+    confidence_levels = [confidence, 0.8, 0.75, 0.7, 0.65, 0.6]
+
+    while time.time() < end:
+        for conf in confidence_levels:
+            try:
+                # Dùng locateOnScreen để lấy box (left, top, width, height)
+                box = pyautogui.locateOnScreen(img_path, confidence=conf)
+                if box:
+                    # Tâm ảnh
+                    cx = box.left + box.width // 2
+                    cy = box.top + box.height // 2
+                    img_size = (box.width, box.height)
+                    click_once(cx, cy, img_size=img_size)
+                    logging.info("Da click: %s tai (%d,%d) size=%dx%d conf=%.2f",
+                                 os.path.basename(img_path), cx, cy, box.width, box.height, conf)
+                    return True
+            except Exception:
+                pass
+        time.sleep(r(*HUMAN.retry_interval))
+
+    logging.error("Khong tim thay anh trong ~%ss: %s", timeout_sec, os.path.basename(img_path))
+    return False
+
+
+def wait_image(img_path, timeout_sec=30, confidence=0.85):
+    """Chờ ảnh xuất hiện (KHÔNG click).
+    Trả về SimpleNamespace(x, y, w, h) hoặc None.
+    x, y = tâm ảnh. w, h = kích thước ảnh (để click_once biết phạm vi)."""
+    logging.info("Cho anh (khong click): %s ...", os.path.basename(img_path))
+    end = time.time() + timeout_sec
+    last_err = None
+
+    while time.time() < end:
+        try:
+            box = pyautogui.locateOnScreen(img_path, confidence=confidence)
+            if box:
+                cx = box.left + box.width // 2
+                cy = box.top + box.height // 2
+                logging.info("Da thay: %s tai (%d,%d) size=%dx%d",
+                             os.path.basename(img_path), cx, cy, box.width, box.height)
+                return SimpleNamespace(x=cx, y=cy, w=box.width, h=box.height)
+        except Exception as e:
+            last_err = e
+        time.sleep(r(*HUMAN.retry_interval))
+
+    if last_err:
+        logging.debug("wait_image last error: %s", last_err)
+    logging.error("Het thoi gian cho: %s", os.path.basename(img_path))
+    return None
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S10 - BƯỚC 1: UPLOAD FILE & NHẬP METADATA                           │
+# └──────────────────────────────────────────────────────────────────────┘
+
+def file_dialog_select_first_mp4(target_folder):
+    """Hộp thoại Open: chọn file .mp4 đầu tiên."""
+    rsleep("long")
+
+    # Click filename.png trước khi nhập đường dẫn
+    logging.info("Tim va click 'filename.png' truoc khi nhap duong dan...")
+    if not wait_and_click_image(TEMPLATE_FILENAME,
+                                timeout_sec=int(r(*HUMAN.click_timeout)),
+                                confidence=r(*HUMAN.click_confidence)):
+        logging.warning("Khong tim thay 'filename.png', tiep tuc voi Ctrl+L")
+    rsleep("medium")
+
+    # Ctrl+L → dán path → Enter
+    pyautogui.hotkey('ctrl', 'l'); rsleep("tiny")
+    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
+    paste_text(target_folder)
+    pyautogui.press('enter'); rsleep("medium")
+
+    # Alt+N → dán *.mp4 → Enter
+    pyautogui.keyDown('alt')
+    pyautogui.press('n')
+    pyautogui.keyUp('alt')
+    rsleep("tiny")
+    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
+    paste_text('*.mp4')
+    pyautogui.press('enter'); rsleep("long")
+
+    # Chọn file đầu và mở
+    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
+    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
+    pyautogui.press('space'); rsleep("tiny")
+    press_key('tab', 2, "small")
+    pyautogui.press('enter'); rsleep("long")
+
+
+def file_dialog_select_thumbnail():
+    """Hộp thoại Open: chọn thumbnail."""
+    rsleep("medium")
+    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
+    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
+    pyautogui.press('space'); rsleep("small")
+    press_key('tab', 4, "tiny")
+    pyautogui.press('enter'); rsleep("long")
+
+
+def file_dialog_select_srt():
+    """Hộp thoại Open: chọn file SRT."""
+    logging.info("Tim va click 'filename.png' truoc khi nhap SRT...")
+    if not wait_and_click_image(TEMPLATE_FILENAME,
+                                timeout_sec=int(r(*HUMAN.click_timeout)),
+                                confidence=r(*HUMAN.click_confidence)):
+        logging.warning("Khong tim thay 'filename.png', tiep tuc nhap truc tiep")
+    rsleep("small")
+
+    paste_text('*.srt'); rsleep("tiny")
+    pyautogui.press('enter'); rsleep("small")
+    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
+    pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
+    pyautogui.press('space'); rsleep("medium")
+    press_key('tab', 4, "tiny")
+    pyautogui.press('enter'); rsleep("long")
+
+
+def handle_metadata_flow(active_row):
+    """
+    Bước 1: Nhập metadata video.
+    Tiêu đề (BB) → Mô tả (BC) → Thumbnail → Danh sách phát → Click Tiếp.
+    """
+    title = norm(active_row[IDX_TITLE_BB]) if len(active_row) > IDX_TITLE_BB else ""
+    desc  = norm(active_row[IDX_DESC_BC])  if len(active_row) > IDX_DESC_BC  else ""
+
+    # === Dán TIÊU ĐỀ ===
+    logging.info("Dan TIEU DE (BB): %s", (title or "(rong)"))
+    rsleep("long")
+    maybe_random_scroll()
+    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
+    paste_text(title or "")
+
+    # Kiểm tra có thử nghiệm A/B thumbnail không (thunghiem.png)
+    # Nếu CÓ: Tab×3 (có thêm 1 ô A/B) — Nếu KHÔNG: Tab×2
+    pos_ab = wait_image(TEMPLATE_THU_NGHIEM, timeout_sec=5, confidence=0.75)
+    if pos_ab:
+        logging.info("Phat hien thu nghiem A/B -> Tab x3 de xuong mo ta.")
+        press_key('tab', 3, "tiny")
+    else:
+        logging.info("Khong co thu nghiem A/B -> Tab x2 de xuong mo ta.")
+        press_key('tab', 2, "tiny")
+    rsleep("small")
+
+    # === Dán MÔ TẢ ===
+    logging.info("Dan MO TA (BC).")
+    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
+    paste_text(desc or "")
+
+    # Enter → Tab×2 → chọn THUMBNAIL
+    pyautogui.press('enter'); rsleep("tiny")
+    press_key('tab', 2, "tiny")
+    rsleep("small")
+
+    # END×2 → Enter → mở hộp thoại chọn thumbnail
+    logging.info("Nhan END de cuon xuong cuoi trang...")
+    pyautogui.press('end'); rsleep("small")
+    pyautogui.press('end'); rsleep("medium")
+    pyautogui.press('enter'); rsleep("small")
+
+    # Chờ hộp thoại Open
+    pos_thumb_open = wait_image(TEMPLATE_OPEN_READY,
+                                timeout_sec=int(r(*HUMAN.click_timeout)),
+                                confidence=r(*HUMAN.click_confidence))
+    if pos_thumb_open:
+        file_dialog_select_thumbnail()
+    else:
+        logging.error("Khong thay hop thoai Open khi chon thumbnail.")
+        return
+
+    # === Chọn DANH SÁCH PHÁT ===
+    logging.info("Cho anchor 'danhsachphat.png'...")
+    pos_dsp = wait_image(TEMPLATE_DANHSACHPHAT,
+                         timeout_sec=int(r(*HUMAN.click_timeout)),
+                         confidence=r(*HUMAN.click_confidence))
+    if not pos_dsp:
+        logging.error("Khong tim thay 'danhsachphat.png' => bo qua chon danh sach phat.")
+    else:
+        move_click(pos_dsp.x, pos_dsp.y, img_size=_img_size(pos_dsp)); rsleep("small")
+        pyautogui.press('tab'); rsleep("tiny")
+        pyautogui.press('enter'); rsleep("small")
+        press_key('tab', 2, "tiny")
+        pyautogui.press('enter'); rsleep("small")
+
+    # === Click TIẾP để sang Bước 2 ===
+    logging.info("Tim va click nut 'Tiep' de qua Buoc 2...")
+    pos = wait_image(TEMPLATE_NEXT_BTN,
+                     timeout_sec=int(r(*HUMAN.click_timeout)),
+                     confidence=r(*HUMAN.click_confidence))
+    if pos:
+        click_once(pos.x, pos.y, img_size=_img_size(pos))
+    else:
+        logging.warning("Khong tim thay nut 'Tiep' sau khi nhap metadata.")
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S11 - BƯỚC 2: PHỤ ĐỀ, END SCREEN, THẺ (CARDS)                      │
+# └──────────────────────────────────────────────────────────────────────┘
+
+def handle_step2_flow(active_row):
+    """
+    Bước 2 gồm 4 phần:
+    A) Upload phụ đề SRT
+    B) Thiết lập End Screen (2 video + 1 playlist + 1 đăng ký)
+    C) Thêm Thẻ Cards (1 playlist + 4 video + timestamps)
+    D) Chuyển sang bước Hẹn lịch
+    """
+    CLICK_TIMEOUT_SEC = int(r(*HUMAN.click_timeout))
+    CLICK_CONFIDENCE  = r(*HUMAN.click_confidence)
+    STEP2_TIMEOUT_SEC = int(r(*HUMAN.step2_timeout))
+
+    # ─── A) VÀO BƯỚC 2 & UPLOAD PHỤ ĐỀ SRT ───
+
+    logging.info("Vao Buoc 2 (anchor buoc2.png, fallback them.png)...")
+    pos_buoc2 = wait_image(TEMPLATE_BUOC2, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if not pos_buoc2:
+        logging.info("Khong thay buoc2.png -> thu them.png")
+        pos_buoc2 = wait_image(TEMPLATE_STEP2_THEM, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+        if not pos_buoc2:
+            logging.error("Khong thay buoc2.png / them.png => chua vao Buoc 2.")
+            return
+
+    # Lặp click để focus đúng vùng SRT
+    MAX_TRIES = 5
+    for attempt in range(1, MAX_TRIES + 1):
+        logging.info(f"[B2 focus try {attempt}/{MAX_TRIES}] click buoc2 -> Tab*4 -> Enter")
+        move_click(pos_buoc2.x, pos_buoc2.y, img_size=_img_size(pos_buoc2)); rsleep("small")
+        press_key('tab', 4, "tiny")
+        pyautogui.press('enter'); rsleep("small")
+
+        logging.info("Kiem tra 'taiteplen.png' sau Enter...")
+        pos_tlp = wait_image(TEMPLATE_TAITEPLEN, timeout_sec=10, confidence=CLICK_CONFIDENCE)
+        if pos_tlp:
+            logging.info("DA thay 'taiteplen.png' -> tiep tuc.")
+            break
+        else:
+            logging.warning("Chua thay 'taiteplen.png' -> lap lai.")
+            pos_buoc2 = wait_image(TEMPLATE_BUOC2, timeout_sec=15, confidence=CLICK_CONFIDENCE) or \
+                        wait_image(TEMPLATE_STEP2_THEM, timeout_sec=5, confidence=CLICK_CONFIDENCE)
+            if not pos_buoc2:
+                logging.error("Mat anchor buoc2/them -> dung Buoc 2.")
+                return
+    else:
+        logging.error(f"Sau {MAX_TRIES} lan van khong thay 'taiteplen.png' -> dung Buoc 2.")
+        return
+
+    # Chờ vùng tải phụ đề
+    logging.info("Cho 'taiteplen.png' (vung Tai tep len phu de)...")
+    if not wait_image(TEMPLATE_TAITEPLEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
+        logging.error("Khong thay 'taiteplen.png' => khong the mo khu tai phu de.")
+        return
+    rsleep("long")
+
+    # Click taiteplen → tieptuc → mở hộp thoại Open SRT
+    pos_tlp = wait_image(TEMPLATE_TAITEPLEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if not pos_tlp:
+        logging.error("Khong thay 'taiteplen.png'.")
+        return
+    move_click(pos_tlp.x, pos_tlp.y, img_size=_img_size(pos_tlp))
+    rsleep("long")
+
+    logging.info("Tim va click 'tieptuc.png' de mo hop thoai Open (SRT)...")
+    if not wait_and_click_image(TEMPLATE_TIEPTUC, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
+        logging.warning("Khong thay 'tieptuc.png' -> fallback Tab*3 roi Enter.")
+        press_key('tab', 3, "tiny")
+        pyautogui.press('enter'); rsleep("long")
+    else:
+        rsleep("long")
+
+    # Hộp thoại Open: chọn SRT
+    pos_open = wait_image(TEMPLATE_OPEN_READY, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if not pos_open:
+        logging.error("Khong thay open.png khi them SRT.")
+        return
+    file_dialog_select_srt()
+
+    # Chờ xong.png rồi click
+    logging.info("Cho 'xong.png' sau khi upload SRT...")
+    pos_done = wait_image(TEMPLATE_DONE, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if not pos_done:
+        logging.error("Khong thay xong.png sau khi them SRT.")
+        return
+    rsleep("medium")
+    move_click(pos_done.x, pos_done.y, img_size=_img_size(pos_done)); rsleep("medium")
+
+    # ─── B) THIẾT LẬP END SCREEN ───
+
+    logging.info("Cho 'manhinhketthuc.png'...")
+    if not wait_image(TEMPLATE_ENDSCREEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
+        logging.error("Khong thay manhinhketthuc.png sau khi them SRT.")
+        return
+
+    # Mở editor End Screen
+    press_key('tab', 2, "tiny")
+    pyautogui.press('enter'); rsleep("medium")
+    rsleep("medium")
+    maybe_random_scroll()
+
+    # Click chọn màn hình kết thúc
+    if not wait_and_click_image(TEMPLATE_CHON_ENDSCREEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
+        logging.error("Khong thay 'chonmanhinhketthuc.png' trong editor End screen.")
+        return
+    press_key('tab', 3, "tiny")
+
+    # Chọn Video 1 (Enter×2)
+    press_key('enter', 2, "small")
+    # Chọn Video 2 (Enter×2)
+    press_key('enter', 2, "small")
+
+    # Chọn Danh sách phát: Enter → 'd' → Enter → Tab×3 → Enter
+    press_key('enter', 1, "small")
+    rsleep("tiny")
+    pyautogui.press('d'); rsleep("tiny")
+    press_key('enter', 1, "small")
+    press_key('tab', 3, "tiny")
+    press_key('enter', 1, "small")
+
+    # Chọn Đăng ký: Enter → click dangky.png
+    press_key('enter', 1, "small")
+    pos_dangky = wait_image(TEMPLATE_DANGKY, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if pos_dangky:
+        move_click(pos_dangky.x, pos_dangky.y, img_size=_img_size(pos_dangky)); rsleep("small")
+    else:
+        logging.error("Khong thay 'dangky.png' => bo qua buoc chon Dang ky.")
+
+    # Lưu End Screen
+    logging.info("Cho 'luu.png' de luu man hinh ket thuc...")
+    pos_save = wait_image(TEMPLATE_SAVE, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if not pos_save:
+        logging.error("Khong thay luu.png de luu man hinh ket thuc.")
+        return
+    move_click(pos_save.x, pos_save.y, img_size=_img_size(pos_save)); rsleep("medium")
+
+    # ─── C) THÊM THẺ (CARDS) ───
+
+    logging.info("Cho 'ketthucok.png' xac nhan da o man 'Man hinh ket thuc'...")
+    if not wait_image(TEMPLATE_KETTHUC_OK, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
+        logging.error("Khong thay 'ketthucok.png' sau khi Luu End Screen.")
+        return
+    rsleep("small")
+
+    # Tab → Enter để vào thêm thẻ
+    press_key('tab', 1, "tiny")
+    pyautogui.press('enter'); rsleep("small")
+    rsleep("small")
+
+    # --- Helper: click nút Thẻ (the.png) ---
+    def click_the_button(step_tag="the_button"):
+        logging.info("Tim va click 'the.png' (nut The)...")
+        # Park chuột ra xa để tránh overlay che template
+        try:
+            pyautogui.moveTo(10, 10, duration=min(0.2, r(*HUMAN.mouse_move_duration)))
+            rsleep("tiny")
+        except Exception:
+            pass
+
+        pos_the = wait_image(TEMPLATE_THE, timeout_sec=int(r(*HUMAN.step2_timeout)),
+                             confidence=r(*HUMAN.click_confidence))
+        if not pos_the:
+            logging.error(f"Khong thay 'the.png' tai buoc {step_tag}.")
+            return False
+
+        try:
+            click_once(pos_the.x, pos_the.y, img_size=_img_size(pos_the))
+        except Exception as e:
+            logging.error("Click vao 'the.png' that bai: %s", e)
+            return False
+
+        rsleep("small")
+        return True
+
+    # --- Helper: click nút the1.png ---
+    def click_the1_button(step_tag="the1_button"):
+        logging.info("Tim va click 'the1.png'...")
+        pos = wait_image(TEMPLATE_THE1, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+        if not pos:
+            logging.error(f"Khong thay 'the1.png' tai buoc {step_tag}.")
+            return False
+        try:
+            click_once(pos.x, pos.y, img_size=_img_size(pos))
+        except Exception as e:
+            logging.error("Click the1.png that bai: %s", e)
+            return False
+        rsleep("tiny")
+        return True
+
+    # --- Helper: thêm 1 playlist card ---
+    def add_single_playlist_card():
+        if not click_the_button(step_tag="playlist_open"):
+            return False
+        press_key('tab', 4, "tiny")
+        pyautogui.press('enter'); rsleep("small")
+        rsleep("small")
+        press_key('tab', 3, "tiny")
+        pyautogui.press('enter'); rsleep("medium")
+        rsleep("small")
+        return True
+
+    # --- Helper: thêm 1 video card ---
+    def add_single_video_card_from_column(active_row, idx_col, col_name=""):
+        link = norm(active_row[idx_col]) if len(active_row) > idx_col else ""
+        if not link:
+            logging.warning("Cot %s rong, bo qua the video.", col_name or f"idx {idx_col}")
+            return False
+
+        if not click_the1_button(step_tag=f"video_{col_name or idx_col}__open_the1"):
+            return False
+
+        rsleep("tiny")
+        press_key('tab', 1, "tiny")
+        pyautogui.press('enter'); rsleep("medium")
+
+        rsleep("small")
+        pos_choose = wait_image(TEMPLATE_CHONVIDEO_CUTHE,
+                                timeout_sec=int(r(*HUMAN.step2_timeout)),
+                                confidence=r(*HUMAN.click_confidence))
+        if not pos_choose:
+            logging.error("Khong thay 'chonmotvideocuthe.png' -> bo qua the video %s.", col_name or idx_col)
+            return False
+        click_once(pos_choose.x, pos_choose.y, img_size=_img_size(pos_choose))
+
+        press_key('tab', 3, "tiny")
+        paste_text(link); rsleep("small")
+
+        logging.info("Cho 'tagvideo.png' de chon video goi y...")
+        pos_tag = wait_image(TEMPLATE_TAGVIDEO,
+                             timeout_sec=int(r(*HUMAN.step2_timeout)),
+                             confidence=r(*HUMAN.click_confidence))
+        if not pos_tag:
+            logging.error("Khong thay 'tagvideo.png' sau khi dan link video %s.", col_name or idx_col)
+            return False
+        click_once(pos_tag.x, pos_tag.y, img_size=_img_size(pos_tag))
+        rsleep("medium")
+        return True
+
+    # --- Helper: thêm timestamp ---
+    def add_timestamp_hhmmss(ts_value: str, step_label: str):
+        if not click_the_button(step_tag=f"timestamp_{step_label}"):
+            return False
+        press_key('tab', 5, "tiny")
+        paste_text(ts_value); rsleep("tiny")
+        pyautogui.press('tab'); rsleep("small")
+        return True
+
+    # Thêm 1 playlist
+    if not add_single_playlist_card():
+        logging.warning("Them playlist card that bai — van tiep tuc voi video cards.")
+
+    # Thêm 4 video card
+    add_single_video_card_from_column(active_row, IDX_LINK_BD, col_name="BD")
+    add_single_video_card_from_column(active_row, IDX_LINK_BE, col_name="BE")
+    add_single_video_card_from_column(active_row, IDX_LINK_BF, col_name="BF")
+    add_single_video_card_from_column(active_row, IDX_LINK_BG, col_name="BG")
+
+    # Thêm timestamps
+    add_timestamp_hhmmss("30:00:00", "30h")
+    add_timestamp_hhmmss("10:00:00", "10m")
+    add_timestamp_hhmmss("15:00:00", "15m")
+    add_timestamp_hhmmss("20:00:00", "20m")
+    add_timestamp_hhmmss("25:00:00", "25m")
+
+    # Lưu Cards
+    rsleep("small")
+    logging.info("Cho 'luu.png' de luu cac the (Cards)...")
+    pos_save_cards = wait_image(TEMPLATE_SAVE, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if not pos_save_cards:
+        logging.error("Khong thay luu.png de luu cac the.")
+        return
+    move_click(pos_save_cards.x, pos_save_cards.y, img_size=_img_size(pos_save_cards)); rsleep("medium")
+
+    # ─── D) CHUYỂN SANG BƯỚC HẸN LỊCH ───
+
+    logging.info("Click 'Che do hien thi' de sang buoc hen lich...")
+    pos_cdhien = wait_image(TEMPLATE_CHEDO_HIEN_THI, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if not pos_cdhien:
+        logging.error("Khong thay 'chedohienthi.png' => khong the sang man hen lich.")
+        return False
+    move_click(pos_cdhien.x, pos_cdhien.y, img_size=_img_size(pos_cdhien))
+    rsleep("long")
+    return True
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S12 - BƯỚC 3-4: HẸN LỊCH & CẬP NHẬT TRẠNG THÁI                     │
+# └──────────────────────────────────────────────────────────────────────┘
+
+def handle_step3_4_flow(active_row, client, code):
+    """
+    Bước 3-4: Nhập ngày/giờ hẹn lịch → Click Lên lịch → Cập nhật trạng thái.
+    """
+    CLICK_TIMEOUT_SEC = int(r(*HUMAN.click_timeout))
+
+    # Click henlich.png để vào màn hẹn lịch
+    logging.info("Tim va click 'henlich.png' de vao man hen lich...")
+    if not wait_and_click_image(TEMPLATE_HENLICH, timeout_sec=CLICK_TIMEOUT_SEC):
+        logging.error("Khong tim thay 'henlich.png' => khong the vao man hen lich.")
+        return False
+
+    logging.info("Da vao man hen lich, doi UI on dinh...")
+    rsleep("medium")
+    maybe_random_scroll()
+
+    # Tab×8 → Enter → vào ô Ngày
+    press_key('tab', 8, "tiny")
+    pyautogui.press('enter'); rsleep("small")
+
+    # === Dán NGÀY (BI) ===
+    date_val = norm(active_row[IDX_DATE_BI]) if len(active_row) > IDX_DATE_BI else ""
+    logging.info("Dan NGAY (BI): %s", date_val or "(rong)")
+    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
+    paste_text(date_val or "")
+    pyautogui.press('enter'); rsleep("small")
+
+    # === Dán GIỜ (BJ) ===
+    time_val = norm(active_row[IDX_TIME_BJ]) if len(active_row) > IDX_TIME_BJ else ""
+    logging.info("Dan GIO (BJ): %s", time_val or "(rong)")
+
+    pos_time = wait_image(TEMPLATE_TIME, timeout_sec=CLICK_TIMEOUT_SEC)
+    if not pos_time:
+        logging.error("Khong thay 'time.png' (o Gio).")
+        return False
+
+    move_click(pos_time.x, pos_time.y, img_size=_img_size(pos_time)); rsleep("small")
+    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
+    paste_text(time_val or "")
+    pyautogui.press('enter'); rsleep("small")
+
+    # === Click LÊN LỊCH ===
+    logging.info("Tim va click 'lenlich.png' de xac nhan hen lich...")
+    pos_publish = wait_image(TEMPLATE_SCHEDULE_PUBLISH, timeout_sec=CLICK_TIMEOUT_SEC)
+    if not pos_publish:
+        logging.error("Khong thay lenlich.png (nut Len lich).")
+        return False
+
+    move_click(pos_publish.x, pos_publish.y, img_size=_img_size(pos_publish)); rsleep("medium")
+
+    # === KIỂM TRA: đôi khi cần click "kiemtra.png" để hoàn thành ===
+    logging.info("Kiem tra xem co 'kiemtra.png' khong...")
+    pos_kt = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=10, confidence=0.75)
+    if pos_kt:
+        logging.info("Thay 'kiemtra.png' -> click de hoan thanh dang.")
+        move_click(pos_kt.x, pos_kt.y, img_size=_img_size(pos_kt))
+        rsleep("medium")
+    else:
+        logging.info("Khong thay 'kiemtra.png' -> khong can, tiep tuc.")
+
+    # === CẬP NHẬT TRẠNG THÁI ===
+    try:
+        update_source_status(client, code, "ĐÃ ĐĂNG")
+        logging.info("Da cap nhat 'DA DANG' cho ma %s.", code)
+    except Exception as e:
+        logging.warning("Cap nhat trang thai loi: %s", e)
+
+    # Chờ 10 phút để YouTube xử lý
+    logging.info("Cho 10 phut de YouTube xu ly truoc khi chuyen sang ma ke.")
+    time.sleep(10 * 60)
+
+    return True
+
+
+# ┌──────────────────────────────────────────────────────────────────────┐
+# │ S13 - MAIN LOOP                                                     │
+# └──────────────────────────────────────────────────────────────────────┘
+
+def pre_stage_tomorrow(input_rows):
+    """Copy sẵn video ngày mai."""
+    try:
+        tomorrow_codes = get_tomorrow_codes(input_rows)
+        if tomorrow_codes:
+            tmr_ok = [c for c in tomorrow_codes
+                      if has_required_files(os.path.join(SERVER_DONE_ROOT, c))
+                      or has_required_files(os.path.join(LOCAL_DONE_ROOT, c))]
+            if tmr_ok:
+                logging.info(f"Pre-stage NGAY MAI: {len(tmr_ok)} ma: {tmr_ok}")
+                for c in tmr_ok:
+                    try:
+                        ensure_local_folder(c)
+                    except Exception as e:
+                        logging.warning(f"Pre-stage loi {c}: {e}")
+            else:
+                logging.info("Khong co ma ngay mai du bo de pre-stage.")
+        else:
+            logging.info("Khong co ma ngay mai de pre-stage.")
+    except Exception as e:
+        logging.warning(f"Loi khi pre-stage ngay mai: {e}")
+
+
 def main():
     random.seed()
     cleanup_posted_codes()
 
-    BROWSER_LAUNCH_WAIT_SEC = int(r(*RANDOM.browser_launch_wait_sec))
-    CLICK_TIMEOUT_SEC       = int(r(*RANDOM.click_timeout_sec))
-    CLICK_CONFIDENCE        = r(*RANDOM.click_confidence)
+    BROWSER_LAUNCH_WAIT_SEC = int(r(*HUMAN.browser_wait))
+    CLICK_TIMEOUT_SEC       = int(r(*HUMAN.click_timeout))
+    CLICK_CONFIDENCE        = r(*HUMAN.click_confidence)
 
     client     = gs_client()
     input_rows = get_rows(client, INPUT_SHEET)
 
-    # ========= XÁC ĐỊNH TRƯỚC TẤT CẢ MÃ CẦN ĐĂNG TRONG PHIÊN NÀY =========
+    # === Xác định danh sách mã cần đăng ===
     ready_codes = get_all_ready_codes(input_rows)
     if not ready_codes:
-        logging.info(f"Không có mã thoả ({CHANNEL_CODE}, {STATUS_OK}) cho hôm nay. Pre-stage NGÀY MAI rồi thoát.")
-        try:
-            tomorrow_codes = get_tomorrow_codes(input_rows)
-            if tomorrow_codes:
-                logging.info(f"Pre-stage NGÀY MAI: {len(tomorrow_codes)} mã: {tomorrow_codes}")
-                for c in tomorrow_codes:
-                    try:
-                        ensure_local_folder(c)  # đã có .mp4 ở local thì hàm tự bỏ qua
-                    except Exception as e:
-                        logging.warning(f"Pre-stage NGÀY MAI lỗi {c}: {e}")
-            else:
-                logging.info("Không có mã ngày mai để pre-stage.")
-        except Exception as e:
-            logging.warning(f"Lỗi khi pre-stage ngày mai: {e}")
+        logging.info(f"Khong co ma thoa ({CHANNEL_CODE}, {STATUS_OK}) cho hom nay. Pre-stage ngay mai.")
+        pre_stage_tomorrow(input_rows)
         return
 
-    # Lọc theo thư mục gốc server: thiếu bộ là loại
-    server_or_local_ok = []
-    for c in ready_codes:
-        lf = os.path.join(LOCAL_DONE_ROOT, c)
-        sf = os.path.join(SERVER_DONE_ROOT, c)
-        if has_required_files(lf) or has_required_files(sf):
-            server_or_local_ok.append(c)
-        else:
-            logging.warning("⛔ Bỏ mã %s: thiếu bộ ở cả local & server.", c)
-    ready_codes = server_or_local_ok
+    # Lọc: chỉ giữ mã có đủ file ở local hoặc server
+    ready_codes = [c for c in ready_codes
+                   if has_required_files(os.path.join(LOCAL_DONE_ROOT, c))
+                   or has_required_files(os.path.join(SERVER_DONE_ROOT, c))]
+    for c in set(get_all_ready_codes(input_rows)) - set(ready_codes):
+        logging.warning("Bo ma %s: thieu bo o ca local & server.", c)
 
     if not ready_codes:
-        logging.info("Không còn mã hợp lệ sau khi kiểm tra thư mục server. Pre-stage NGÀY MAI rồi thoát.")
-        # Pre-stage ngày mai nhưng cũng lọc theo server
-        try:
-            tomorrow_codes = get_tomorrow_codes(input_rows)
-            if tomorrow_codes:
-                tmr_ok = [c for c in tomorrow_codes if has_required_files(os.path.join(SERVER_DONE_ROOT, c))]
-                if tmr_ok:
-                    logging.info(f"Pre-stage NGÀY MAI (đã lọc đủ bộ): {tmr_ok}")
-                    for c in tmr_ok:
-                        try:
-                            ensure_local_folder(c)
-                        except Exception as e:
-                            logging.warning(f"Pre-stage NGÀY MAI lỗi {c}: {e}")
-                else:
-                    logging.info("Không có mã ngày mai đủ bộ để pre-stage.")
-            else:
-                logging.info("Không có mã ngày mai để pre-stage.")
-        except Exception as e:
-            logging.warning(f"Lỗi khi pre-stage ngày mai: {e}")
-        return   
-    logging.info(f"Phiên này sẽ chỉ đăng {len(ready_codes)} mã: {ready_codes}")
-    
-    # Pre-stage (copy) tất cả mã đã lên lịch đăng
+        logging.info("Khong con ma hop le sau khi kiem tra thu muc. Pre-stage ngay mai.")
+        pre_stage_tomorrow(input_rows)
+        return
+
+    logging.info(f"Phien nay se dang {len(ready_codes)} ma: {ready_codes}")
+
+    # Pre-stage tất cả mã
     for c in ready_codes:
         try:
-            ensure_local_folder(c)  # sẽ không copy lại nếu local đã có .mp4
+            ensure_local_folder(c)
         except Exception as e:
-            logging.warning(f"Prestage lỗi {c}: {e}")
+            logging.warning(f"Prestage loi {c}: {e}")
 
-    # 1) Đóng trình duyệt đang chạy (local)
+    # Đóng browser cũ → mở browser mới
     close_browsers_gently_in_rdp()
     rsleep("small")
 
-    # 2) Mở trình duyệt LOCAL
-    logging.info("Mở trình duyệt: %s", RUN_BROWSER_EXE)
+    logging.info("Mo trinh duyet: %s", RUN_BROWSER_EXE)
     open_run_and_execute(RUN_BROWSER_EXE)
     time.sleep(BROWSER_LAUNCH_WAIT_SEC)
 
-    # ========= VÒNG LẶP ĐĂNG TỪNG MÃ TRONG DANH SÁCH ĐÃ XÁC ĐỊNH =========
+    # === VÒNG LẶP ĐĂNG TỪNG MÃ ===
     first_time = True
     processed_codes = set()
-    round_idx = 0
 
-    # Thay đổi chính: vòng lặp qua danh sách mã đã xác định trước
-    for code in ready_codes:
-        # Kiểm tra lại nếu mã đã xử lý trong phiên này
+    for round_idx, code in enumerate(ready_codes, 1):
         if code in processed_codes:
-            logging.info("Mã %s đã xử lý trong phiên này. Bỏ qua.", code)
+            logging.info("Ma %s da xu ly. Bo qua.", code)
             continue
-            
-        round_idx += 1
-        logging.info("=== Vòng đăng #%d | CODE: %s ===", round_idx, code)
-        
-        # Lấy toàn bộ hàng để đọc BB/BC
+
+        logging.info("=== Vong dang #%d | CODE: %s ===", round_idx, code)
+
         active_row = find_row_by_code(input_rows, code)
         if not active_row:
-            logging.error("Không tìm thấy dòng dữ liệu tương ứng với mã: %s", code)
+            logging.error("Khong tim thay dong du lieu cho ma: %s", code)
             continue
 
         target_folder = FOLDER_PATTERN.format(code=code)
-        logging.info("Thư mục mã: %s", target_folder)
-        
-        # Đảm bảo thư mục video tồn tại
+        logging.info("Thu muc ma: %s", target_folder)
+
         if not ensure_local_folder(code):
-            logging.error(f"Không thể chuẩn bị thư mục video cho mã {code} ⇒ bỏ qua.")
+            logging.error(f"Khong the chuan bi thu muc video cho ma {code} => bo qua.")
             continue
 
-        # Điều hướng tới trang upload
+        # Mở tab mới (trừ lần đầu)
         if not first_time:
             pyautogui.hotkey('ctrl', 't'); rsleep("small")
-        
-        logging.info("Đi tới: %s", UPLOAD_URL)
+
+        # Điều hướng tới trang upload
+        logging.info("Di toi: %s", UPLOAD_URL)
         pyautogui.hotkey('ctrl', 'l'); rsleep("tiny")
         paste_text(UPLOAD_URL)
         pyautogui.press('enter'); rsleep("medium")
-        
-        # ===== THÊM ĐOẠN PHÓNG TO TRÌNH DUYỆT SAU KHI MỞ LINK UPLOAD =====
-        logging.info("Phóng to cửa sổ trình duyệt...")
-           
+
+        # Phóng to cửa sổ
+        logging.info("Phong to cua so trinh duyet...")
         try:
-            # Cách 2: Alt+Space rồi X
             pyautogui.keyDown('alt'); pyautogui.press('space'); pyautogui.keyUp('alt'); rsleep("tiny")
             pyautogui.press('x'); rsleep("small")
         except Exception:
-            logging.warning("Phóng to bằng Alt+Space -> X thất bại, thử cách khác...")
-        
+            logging.warning("Phong to bang Alt+Space -> X that bai.")
         try:
-            # Cách 3: Windows+Up
             pyautogui.keyDown('win'); pyautogui.press('up'); pyautogui.keyUp('win'); rsleep("small")
         except Exception:
-            logging.warning("Phóng to bằng Win+Up thất bại.")
-        pyautogui.press('f5'); rsleep("medium")
-        # 7) Chờ nút Select files rồi click
-        logging.info("Chờ nút Select files (chonfile.png)...")
+            logging.warning("Phong to bang Win+Up that bai.")
 
+        pyautogui.press('f5'); rsleep("medium")
+
+        # Chờ nút Select files
+        logging.info("Cho nut Select files (chonfile.png)...")
         if not wait_and_click_image(TEMPLATE_SELECT_BTN,
                                     timeout_sec=CLICK_TIMEOUT_SEC,
                                     confidence=CLICK_CONFIDENCE):
-            logging.warning("Hết hạn chưa thấy chonfile.png → F5 rồi thử lại 1 lần.")
+            logging.warning("Het han chua thay chonfile.png -> F5 roi thu lai.")
             try:
                 pyautogui.press('f5')
             except Exception:
                 pass
-            rsleep("medium")  # đợi trang refresh
-
-            # thử lại một lần, thời gian ngắn hơn
+            rsleep("medium")
             if not wait_and_click_image(TEMPLATE_SELECT_BTN,
                                         timeout_sec=max(20, CLICK_TIMEOUT_SEC // 2),
                                         confidence=CLICK_CONFIDENCE):
-                logging.error("Không click được nút Select files (sau khi F5). Bỏ qua mã %s.", code)
+                logging.error("Khong click duoc nut Select files. Bo qua ma %s.", code)
                 continue
 
-        
-
-
-        # 8) Chờ hộp thoại Open sẵn sàng
-        logging.info("Chờ hộp thoại Open (open.png)...")
+        # Chờ hộp thoại Open
+        logging.info("Cho hop thoai Open (open.png)...")
         pos_open = wait_image(TEMPLATE_OPEN_READY, timeout_sec=CLICK_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
         if not pos_open:
-            logging.error("Không thấy open.png (hộp thoại Open chưa load). Bỏ qua mã %s.", code)
+            logging.error("Khong thay open.png. Bo qua ma %s.", code)
             first_time = False
             continue
 
-        # 9) Chọn .mp4 đầu tiên
-        logging.info("Chọn .mp4 đầu tiên trong thư mục: %s", target_folder)
+        # Chọn .mp4
+        logging.info("Chon .mp4 dau tien trong: %s", target_folder)
         file_dialog_select_first_mp4(target_folder)
-        logging.info("Đã chọn video — YouTube bắt đầu upload.")
+        logging.info("Da chon video — YouTube bat dau upload.")
 
-        # 10) Chờ trang metadata sẵn sàng
+        # Chờ metadata sẵn sàng
         pos_next = wait_image(TEMPLATE_NEXT_BTN, timeout_sec=CLICK_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
         if not pos_next:
-            logging.error("Không thấy giao diện metadata (tiep.png) với mã %s. Bỏ qua.", code)
+            logging.error("Khong thay giao dien metadata voi ma %s. Bo qua.", code)
             first_time = False
             continue
 
-        # 11) Nhập metadata + Step 2 + Step 4 (lên lịch)
-        handle_metadata_flow(active_row)
-        handle_step2_flow(active_row)
-        ok = handle_step3_4_flow(active_row, client, code)
+        # === THỰC HIỆN 3 BƯỚC CHÍNH ===
+        handle_metadata_flow(active_row)      # Bước 1
+
+        # === KIỂM TRA VIDEO ĐANG TẢI (doitai.png) TRƯỚC KHI VÀO BƯỚC 2 ===
+        skip_step2 = False
+        logging.info("Kiem tra video dang tai (doitai.png)...")
+        pos_doitai = wait_image(TEMPLATE_DOI_TAI, timeout_sec=10, confidence=0.75)
+
+        if pos_doitai:
+            # Video đang tải → chờ tối đa 1 tiếng cho nó biến mất
+            logging.info("Video dang tai! Cho toi da 1 tieng de tai xong...")
+            WAIT_UPLOAD_MAX = 60 * 60  # 1 tiếng
+            end_wait = time.time() + WAIT_UPLOAD_MAX
+
+            while time.time() < end_wait:
+                time.sleep(r(15, 30))  # kiểm tra mỗi 15-30 giây
+                still_uploading = wait_image(TEMPLATE_DOI_TAI, timeout_sec=5, confidence=0.75)
+                if not still_uploading:
+                    logging.info("Video da tai xong! Tiep tuc Buoc 2 binh thuong.")
+                    break
+                remaining = int(end_wait - time.time())
+                if remaining > 0 and remaining % 120 < 30:
+                    logging.info("Van dang tai... con %d phut.", remaining // 60)
+            else:
+                # Hết 1 tiếng vẫn chưa xong → bỏ qua Step 2
+                logging.warning("Het 1 tieng van chua tai xong -> bo qua Buoc 2, chuyen thang hen lich.")
+                skip_step2 = True
+        else:
+            logging.info("Khong thay doitai.png -> video da san sang, vao Buoc 2 binh thuong.")
+
+        if not skip_step2:
+            handle_step2_flow(active_row)         # Bước 2 đầy đủ
+        else:
+            # Bỏ qua Step 2, chỉ click "Chế độ hiển thị" để sang Step 3-4
+            logging.info("Bo qua Buoc 2 -> click 'Che do hien thi' de sang hen lich...")
+            wait_and_click_image(TEMPLATE_CHEDO_HIEN_THI,
+                                 timeout_sec=int(r(*HUMAN.click_timeout)),
+                                 confidence=r(*HUMAN.click_confidence))
+            rsleep("long")
+
+        ok = handle_step3_4_flow(active_row, client, code)  # Bước 3-4
 
         if not ok:
-            logging.error("Đăng/lên lịch không xác nhận được bằng ảnh → bỏ qua Ctrl+T cho vòng sau.")
+            logging.error("Dang/len lich khong xac nhan duoc => bo qua.")
             continue
 
-        # Thêm mã đã xử lý vào danh sách đã xử lý
         processed_codes.add(code)
         first_time = False
-        
-    logging.info("Đã hoàn thành tất cả %d/%d mã trong danh sách.", len(processed_codes), len(ready_codes))
 
-    # ⬇️ Copy sẵn video của NGÀY MAI (pre-stage)
-    try:
-        tomorrow_codes = get_tomorrow_codes(input_rows)
-        if tomorrow_codes:
-            logging.info(f"Pre-stage NGÀY MAI: {len(tomorrow_codes)} mã: {tomorrow_codes}")
-            for c in tomorrow_codes:
-                try:
-                    ensure_local_folder(c)  # sẽ không copy lại nếu local đã có .mp4
-                except Exception as e:
-                    logging.warning(f"Pre-stage lỗi {c}: {e}")
-        else:
-            logging.info("Không có mã ngày mai để pre-stage.")
-    except Exception as e:
-        logging.warning(f"Lỗi khi pre-stage ngày mai: {e}")
+    logging.info("Da hoan thanh %d/%d ma trong danh sach.", len(processed_codes), len(ready_codes))
+
+    # Pre-stage ngày mai
+    pre_stage_tomorrow(input_rows)
 
 
 if __name__ == "__main__":
     while True:
         try:
-            # ❌ Bỏ dòng close_browsers_gently_in_rdp() ở đây
             main()
         except Exception as e:
-            logging.error("Lỗi khi chạy main(): %s", e)
+            logging.error("Loi khi chay main(): %s", e)
         time.sleep(3 * 60 * 60)
-
-
-
-
-
-
-
-
-
-
-
