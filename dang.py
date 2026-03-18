@@ -401,27 +401,18 @@ def _parse_time(s):
 # └──────────────────────────────────────────────────────────────────────┘
 
 
-def gs_client(max_retries=3):
-    """Kết nối Google Sheets, retry nếu lỗi."""
+def gs_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIAL_PATH, scope)
-    for attempt in range(1, max_retries + 1):
-        try:
-            client = gspread.authorize(creds)
-            # Test thử mở spreadsheet để chắc chắn hoạt động
-            client.open(SPREADSHEET_NAME)
-            return client
-        except Exception as e:
-            logging.warning(f"gs_client lan {attempt}/{max_retries} loi: {e}")
-            if attempt < max_retries:
-                time.sleep(10)
-                creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIAL_PATH, scope)
-    # Lần cuối: trả về client dù chưa test
     return gspread.authorize(creds)
 
 
 def get_rows(client, sheet_name):
-    return client.open(SPREADSHEET_NAME).worksheet(sheet_name).get_all_values()
+    try:
+        return client.open(SPREADSHEET_NAME).worksheet(sheet_name).get_all_values()
+    except Exception as e:
+        logging.error(f"Loi get_rows('{SPREADSHEET_NAME}', '{sheet_name}'): {type(e).__name__}: {e}")
+        raise
 
 
 def find_row_by_code(rows, code):
