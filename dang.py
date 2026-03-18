@@ -59,19 +59,21 @@ _CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.
 with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
     CFG = json.load(_f)
 
-CHANNEL_CODE      = CFG["CHANNEL_CODE"]
-RUN_BROWSER_EXE   = CFG["RUN_BROWSER_EXE"]
-LOCAL_DONE_ROOT   = CFG["LOCAL_DONE_ROOT"]
-SERVER_DONE_ROOT  = CFG["SERVER_DONE_ROOT"]
+CHANNEL_CODE      = CFG.get("CHANNEL_CODE", "")
+RUN_BROWSER_EXE   = CFG.get("RUN_BROWSER_EXE", "")
+LOCAL_DONE_ROOT   = CFG.get("LOCAL_DONE_ROOT", "")
+SERVER_DONE_ROOT  = CFG.get("SERVER_DONE_ROOT", "")
 UPLOAD_URL        = "https://www.youtube.com/upload"
 
-# Google Sheets
-SPREADSHEET_NAME  = CFG["SPREADSHEET_NAME"]
-INPUT_SHEET       = CFG.get("INPUT_SHEET", "INPUT")
+# Google Sheets — hỗ trợ cả tên field cũ và mới
+SPREADSHEET_NAME  = CFG.get("SPREADSHEET_NAME", "")
+INPUT_SHEET       = CFG.get("INPUT_SHEET", CFG.get("SHEET_NAME", "INPUT"))
 SOURCE_SHEET      = CFG.get("SOURCE_SHEET", "NGUON")
 CREDENTIAL_PATH   = CFG.get("CREDENTIAL_PATH", "creds.json")
 STATUS_OK         = CFG.get("STATUS_OK", "EDIT XONG")
 STATUS_COL        = CFG.get("STATUS_COL", 48)
+
+logging.info(f"Config: CHANNEL={CHANNEL_CODE}, SHEET={SPREADSHEET_NAME}, BROWSER={RUN_BROWSER_EXE}")
 
 # Đường dẫn thư mục video
 BASE_DIR          = os.path.dirname(os.path.abspath(__file__))
