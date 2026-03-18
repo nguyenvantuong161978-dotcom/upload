@@ -401,29 +401,34 @@ def _parse_time(s):
 # │     + IPv4 toggle: bật khi cần mạng, tắt khi thao tác trình duyệt  │
 # └──────────────────────────────────────────────────────────────────────┘
 
+def _run_as_admin(ps_command):
+    """Chạy lệnh PowerShell với quyền Administrator."""
+    import subprocess
+    # Start-Process -Verb RunAs để nâng quyền admin
+    cmd = (
+        f'Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden '
+        f'-ArgumentList \'-Command {ps_command}\''
+    )
+    subprocess.run(['powershell', '-Command', cmd], capture_output=True, timeout=30)
+
+
 def enable_ipv4():
-    """Bật IPv4 trên tất cả network adapter (cần cho Google API)."""
+    """Bật IPv4 trên tất cả network adapter (cần quyền Admin)."""
     try:
-        import subprocess
-        subprocess.run(
-            ['powershell', '-Command',
-             'Get-NetAdapter | ForEach-Object { Enable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }'],
-            capture_output=True, timeout=15
+        _run_as_admin(
+            'Get-NetAdapter | ForEach-Object { Enable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }'
         )
-        time.sleep(3)  # chờ mạng ổn định
+        time.sleep(5)  # chờ mạng ổn định
         logging.info("Da bat IPv4.")
     except Exception as e:
         logging.warning(f"Khong bat duoc IPv4: {e}")
 
 
 def disable_ipv4():
-    """Tắt IPv4 (trả về IPv6 only cho trình duyệt)."""
+    """Tắt IPv4 — trả về IPv6 only (cần quyền Admin)."""
     try:
-        import subprocess
-        subprocess.run(
-            ['powershell', '-Command',
-             'Get-NetAdapter | ForEach-Object { Disable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }'],
-            capture_output=True, timeout=15
+        _run_as_admin(
+            'Get-NetAdapter | ForEach-Object { Disable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }'
         )
         time.sleep(2)
         logging.info("Da tat IPv4.")

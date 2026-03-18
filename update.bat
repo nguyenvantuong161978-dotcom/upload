@@ -1,6 +1,13 @@
 @echo off
+REM === Tu dong chay voi quyen Administrator ===
+net session >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
+
 chcp 65001 >nul 2>&1
-title Cap Nhat Tu GitHub
+title Cap Nhat Tu GitHub [ADMIN]
 cd /d "%~dp0"
 
 echo ============================================
