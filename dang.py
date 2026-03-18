@@ -706,10 +706,14 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
                 except Exception:
                     pass
 
-        # Chờ trước khi retry — càng lâu hơn mỗi lần
+        # Chờ trước khi retry — Permission denied cần chờ lâu hơn
         if attempt < max_retries:
-            wait = attempt * 15  # 15s, 30s, 45s, 60s
-            logging.info(f"  Cho {wait}s truoc khi thu lai...")
+            if "permission" in str(e).lower() or "denied" in str(e).lower():
+                wait = attempt * 60  # 60s, 120s, 180s — file có thể đang bị lock
+                logging.info(f"  Permission denied -> cho {wait}s (file co the dang bi lock)...")
+            else:
+                wait = attempt * 30  # 30s, 60s, 90s, 120s
+                logging.info(f"  Cho {wait}s truoc khi thu lai...")
             time.sleep(wait)
 
     logging.error(f"  THAT BAI sau {max_retries} lan: {src_name} ({src_size:,} bytes)")
