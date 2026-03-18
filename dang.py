@@ -961,13 +961,14 @@ def file_dialog_select_first_mp4(target_folder):
     paste_text(target_folder)
     pyautogui.press('enter'); rsleep("medium")
 
-    # Alt+N → dán *.mp4 → Enter
+    # Alt+N → focus ô File Name → dán *.mp4 → Enter
     pyautogui.keyDown('alt')
     pyautogui.press('n')
     pyautogui.keyUp('alt')
-    rsleep("tiny")
+    rsleep("small")  # chờ ô File Name focus (RDP lag)
     pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
     paste_text('*.mp4')
+    rsleep("small")  # chờ trước khi Enter
     pyautogui.press('enter'); rsleep("long")
 
     # Chọn file đầu và mở
