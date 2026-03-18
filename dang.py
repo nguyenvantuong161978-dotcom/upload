@@ -1625,11 +1625,13 @@ def main():
 
 
 if __name__ == "__main__":
+    import traceback
     while True:
         try:
             main()
         except Exception as e:
             logging.error("Loi khi chay main(): %s", e)
+            logging.error("Chi tiet loi:\n%s", traceback.format_exc())
             # Nếu lỗi mạng → chờ 5 phút thay vì 3 tiếng
             if "resolve" in str(e).lower() or "connection" in str(e).lower():
                 logging.info("Loi mang -> cho 5 phut roi thu lai.")
