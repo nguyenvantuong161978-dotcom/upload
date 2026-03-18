@@ -484,71 +484,262 @@ def has_required_files(dir_path: str) -> bool:
     return has_mp4 and has_srt and has_img
 
 
-def get_required_stats(dir_path: str):
-    """Trả về (count, total_bytes) của mp4 + srt + ảnh."""
+def get_file_sizes(dir_path: str) -> dict:
+    """Trả về dict {filename: size} của các file bắt buộc (mp4, srt, ảnh)."""
+    result = {}
     if not os.path.isdir(dir_path):
-        return (0, 0)
-    total = 0
-    count = 0
-    for root, _, files in os.walk(dir_path):
-        for name in files:
-            ext = os.path.splitext(name)[1].lower()
-            if ext == ".mp4" or ext == ".srt" or ext in IMG_EXTS:
-                fp = os.path.join(root, name)
+        return result
+    for name in os.listdir(dir_path):
+        ext = os.path.splitext(name)[1].lower()
+        if ext == ".mp4" or ext == ".srt" or ext in IMG_EXTS:
+            fp = os.path.join(dir_path, name)
+            try:
+                result[name.lower()] = os.path.getsize(fp)
+            except Exception:
+                pass
+    return result
+
+
+def verify_local_matches_server(local_folder: str, server_folder: str) -> bool:
+    """So sánh TỪNG FILE giữa local và server.
+    Trả về True nếu mọi file trên server đều có ở local với CÙNG dung lượng.
+    Phát hiện file bị copy dở (size khác) hoặc thiếu file."""
+    server_files = get_file_sizes(server_folder)
+    local_files = get_file_sizes(local_folder)
+
+    if not server_files:
+        return True  # server không có gì để so
+
+    for name, server_size in server_files.items():
+        local_size = local_files.get(name)
+        if local_size is None:
+            logging.warning(f"  Thieu file o local: {name}")
+            return False
+        if local_size != server_size:
+            logging.warning(f"  File bi loi: {name} (local={local_size:,} bytes, server={server_size:,} bytes)")
+            return False
+
+    return True
+
+
+COPY_CHUNK_SIZE = 64 * 1024 * 1024  # 64MB mỗi chunk — phù hợp file 10GB qua mạng
+COPY_MAX_RETRIES = 5
+# Ngưỡng file "lớn" (>100MB) sẽ dùng robocopy thay vì Python copy
+LARGE_FILE_THRESHOLD = 100 * 1024 * 1024
+
+
+def _copy_chunked(src, dst, src_size):
+    """Copy file theo từng chunk 64MB. Trả về True nếu dung lượng khớp.
+    Ưu điểm: phát hiện lỗi mạng sớm, không phải chờ copy xong mới biết."""
+    src_name = os.path.basename(src)
+    copied = 0
+    total_chunks = (src_size + COPY_CHUNK_SIZE - 1) // COPY_CHUNK_SIZE
+    last_log_pct = -1
+
+    with open(src, 'rb') as fsrc:
+        with open(dst, 'wb') as fdst:
+            while True:
+                chunk = fsrc.read(COPY_CHUNK_SIZE)
+                if not chunk:
+                    break
+                fdst.write(chunk)
+                copied += len(chunk)
+
+                # Log tiến độ mỗi 10% cho file lớn
+                if src_size > LARGE_FILE_THRESHOLD:
+                    pct = int(copied * 100 / src_size)
+                    if pct // 10 > last_log_pct // 10:
+                        last_log_pct = pct
+                        logging.info(f"    {src_name}: {pct}%% ({copied:,}/{src_size:,} bytes)")
+
+            # Flush buffer Python → OS
+            fdst.flush()
+            # Flush OS → đĩa thật sự (quan trọng cho mạng)
+            os.fsync(fdst.fileno())
+
+    # Kiểm tra dung lượng cuối cùng
+    dst_size = os.path.getsize(dst)
+    return dst_size == src_size
+
+
+def _copy_robocopy(src_dir, dst_dir, filename):
+    """Dùng robocopy (có sẵn trên Windows) để copy 1 file lớn.
+    Robocopy được thiết kế cho copy qua mạng: tự retry, chịu lỗi tốt."""
+    import subprocess
+    cmd = [
+        'robocopy',
+        src_dir,            # thư mục nguồn
+        dst_dir,            # thư mục đích
+        filename,           # chỉ copy 1 file này
+        '/R:3',             # retry 3 lần mỗi file
+        '/W:10',            # chờ 10s giữa mỗi retry
+        '/NP',              # không hiện progress bar
+        '/NDL',             # không hiện tên thư mục
+        '/NJH', '/NJS',     # không hiện header/summary
+        '/MT:1',            # 1 thread (ổn định hơn qua mạng)
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)  # 2 tiếng cho file 10GB
+        # Robocopy exit code: 0=no copy needed, 1=copied OK, >=8=error
+        return result.returncode < 8
+    except Exception as e:
+        logging.warning(f"  Robocopy that bai: {e}")
+        return False
+
+
+def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
+    """Copy 1 file an toàn. File lớn (>100MB) dùng robocopy, nhỏ dùng chunk.
+    Retry tối đa 5 lần, chờ lâu hơn giữa mỗi lần.
+    Kiểm tra dung lượng CHÍNH XÁC sau mỗi lần copy."""
+    src_size = os.path.getsize(src)
+    src_name = os.path.basename(src)
+    src_dir = os.path.dirname(src)
+    dst_dir = os.path.dirname(dst)
+    is_large = src_size > LARGE_FILE_THRESHOLD
+
+    if is_large:
+        logging.info(f"  File lon ({src_size / (1024**3):.1f} GB): {src_name}")
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Xóa file cũ nếu có (file lỗi từ lần trước)
+            if os.path.exists(dst):
+                os.remove(dst)
+
+            # === COPY ===
+            ok = False
+            if is_large:
+                # File lớn: thử robocopy trước (tốt nhất cho mạng)
+                logging.info(f"  [{attempt}/{max_retries}] Thu robocopy: {src_name}")
+                ok = _copy_robocopy(src_dir, dst_dir, src_name)
+                if ok and os.path.exists(dst):
+                    dst_size = os.path.getsize(dst)
+                    ok = (dst_size == src_size)
+                    if not ok:
+                        logging.warning(f"  Robocopy xong nhung size sai "
+                                        f"(dst={dst_size:,}, src={src_size:,})")
+
+            if not ok:
+                # Fallback: copy theo chunk 64MB
+                if is_large and attempt == 1:
+                    logging.info(f"  Robocopy khong duoc -> dung chunked copy")
+                elif not is_large:
+                    pass  # file nhỏ luôn dùng chunk
+                ok = _copy_chunked(src, dst, src_size)
+
+            # === KIỂM TRA ===
+            if ok:
+                dst_size = os.path.getsize(dst)
+                if dst_size == src_size:
+                    if attempt > 1:
+                        logging.info(f"  Retry thanh cong (lan {attempt}): "
+                                     f"{src_name} ({src_size:,} bytes)")
+                    return True
+                else:
+                    logging.warning(f"  [{attempt}/{max_retries}] {src_name}: "
+                                    f"size khong khop (src={src_size:,}, dst={dst_size:,})")
+            else:
+                logging.warning(f"  [{attempt}/{max_retries}] Copy that bai: {src_name}")
+
+            # Xóa file lỗi
+            if os.path.exists(dst):
+                os.remove(dst)
+
+        except Exception as e:
+            logging.warning(f"  [{attempt}/{max_retries}] Loi copy {src_name}: {e}")
+            if os.path.exists(dst):
                 try:
-                    total += os.path.getsize(fp)
-                    count += 1
+                    os.remove(dst)
                 except Exception:
                     pass
-    return (count, total)
+
+        # Chờ trước khi retry — càng lâu hơn mỗi lần
+        if attempt < max_retries:
+            wait = attempt * 15  # 15s, 30s, 45s, 60s
+            logging.info(f"  Cho {wait}s truoc khi thu lai...")
+            time.sleep(wait)
+
+    logging.error(f"  THAT BAI sau {max_retries} lan: {src_name} ({src_size:,} bytes)")
+    return False
 
 
-def ensure_local_folder(code, delete_server=True):
-    """Đảm bảo thư mục local có đủ file. Copy từ server nếu cần."""
+def ensure_local_folder(code):
+    """Đảm bảo thư mục local có đủ file ĐÚNG dung lượng.
+    Copy TỪNG FILE, kiểm tra dung lượng, retry nếu lỗi."""
     local_folder  = os.path.join(LOCAL_DONE_ROOT, code)
     server_folder = os.path.join(SERVER_DONE_ROOT, code)
 
     local_enough  = os.path.isdir(local_folder) and has_required_files(local_folder)
     server_enough = has_required_files(server_folder)
 
+    # Trường hợp 1: Local đã có file — kiểm tra từng file khớp server
     if local_enough:
         if server_enough:
-            lc = get_required_stats(local_folder)
-            sc = get_required_stats(server_folder)
-            if lc != sc:
-                logging.info(f"Local khac server ({lc} != {sc}) -> refresh tu server.")
-            else:
+            if verify_local_matches_server(local_folder, server_folder):
                 logging.info(f"Local da du bo va khop server: {local_folder}")
                 return True
+            else:
+                logging.info(f"Local co file bi loi/thieu -> copy lai tu server.")
+                # Tiếp tục xuống phần copy bên dưới
         else:
             logging.info(f"Local da du bo; server khong san. Giu nguyen: {local_folder}")
             return True
 
+    # Trường hợp 2: Cần copy từ server
     if not server_enough:
         logging.error(f"Server thieu bo hoac khong co: {server_folder}")
         return False
 
-    try:
-        if os.path.exists(local_folder):
-            shutil.rmtree(local_folder, ignore_errors=True)
-        shutil.copytree(server_folder, local_folder)
-        logging.info(f"Da copy {server_folder} -> {local_folder}")
-    except Exception as e:
-        logging.error(f"Loi copy {server_folder} -> {local_folder}: {e}")
+    # Tạo thư mục local nếu chưa có
+    os.makedirs(local_folder, exist_ok=True)
+
+    # Copy TỪNG FILE — chỉ copy file thiếu hoặc sai dung lượng
+    server_files = get_file_sizes(server_folder)
+    local_files = get_file_sizes(local_folder)
+    all_ok = True
+
+    for filename, server_size in server_files.items():
+        src_path = os.path.join(server_folder, filename)
+        dst_path = os.path.join(local_folder, filename)
+
+        # Nếu local đã có và đúng dung lượng → bỏ qua
+        local_size = local_files.get(filename)
+        if local_size == server_size:
+            logging.info(f"  OK (da co): {filename} ({server_size:,} bytes)")
+            continue
+
+        # Copy file (retry tối đa 3 lần)
+        logging.info(f"  Dang copy: {filename} ({server_size:,} bytes)...")
+        if not copy_single_file(src_path, dst_path, max_retries=3):
+            all_ok = False
+            logging.error(f"  KHONG THE COPY: {filename}")
+
+    if not all_ok:
+        logging.error(f"Co file copy that bai trong: {local_folder}")
         return False
 
+    # Xác nhận lần cuối: đủ bộ + khớp dung lượng
     if not has_required_files(local_folder):
         logging.error(f"Sau copy, local van thieu bo: {local_folder}")
         return False
 
-    if delete_server:
+    if not verify_local_matches_server(local_folder, server_folder):
+        logging.error(f"Sau copy, van co file khong khop: {local_folder}")
+        return False
+
+    logging.info(f"Copy hoan tat va xac nhan khop 100%%: {local_folder}")
+    return True
+
+
+def delete_server_folder(code):
+    """Xóa thư mục server sau khi đã đăng xong."""
+    server_folder = os.path.join(SERVER_DONE_ROOT, code)
+    if os.path.isdir(server_folder):
         try:
             shutil.rmtree(server_folder)
             logging.info(f"Da xoa thu muc server: {server_folder}")
         except Exception as e:
             logging.warning(f"Khong xoa duoc server {server_folder}: {e}")
-
-    return True
 
 
 def cleanup_posted_codes():
