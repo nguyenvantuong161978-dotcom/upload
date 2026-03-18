@@ -1,0 +1,11 @@
+# Chi push cmt.py, dang.py, run.bat, icon/
+# Ignore tat ca truoc, roi cho phep tung file
+
+*
+!.gitignore
+!cmt.py
+!dang.py
+!run.bat
+!icon/
+!icon/**
+Thumbs.db
