@@ -59,10 +59,17 @@ _CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.
 with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
     CFG = json.load(_f)
 
-CHANNEL_CODE      = CFG.get("CHANNEL_CODE", "")
-RUN_BROWSER_EXE   = CFG.get("RUN_BROWSER_EXE", "")
-LOCAL_DONE_ROOT   = CFG.get("LOCAL_DONE_ROOT", "")
-SERVER_DONE_ROOT  = CFG.get("SERVER_DONE_ROOT", "")
+# Tự nhận diện từ vị trí dang.py:
+# C:\Users\{user}\Documents\{CHANNEL_CODE}\upload\dang.py
+_UPLOAD_DIR    = os.path.dirname(os.path.abspath(__file__))        # ...\upload
+_CHANNEL_DIR   = os.path.dirname(_UPLOAD_DIR)                      # ...\{CHANNEL_CODE}
+_AUTO_CHANNEL  = os.path.basename(_CHANNEL_DIR)                    # CHANNEL_CODE
+_USER_HOME     = os.path.expanduser("~")                           # C:\Users\{user}
+
+CHANNEL_CODE      = CFG.get("CHANNEL_CODE", _AUTO_CHANNEL)
+RUN_BROWSER_EXE   = CFG.get("RUN_BROWSER_EXE", os.path.join(_CHANNEL_DIR, f"{_AUTO_CHANNEL}.exe"))
+LOCAL_DONE_ROOT   = CFG.get("LOCAL_DONE_ROOT", os.path.join(_USER_HOME, "Desktop", "done"))
+SERVER_DONE_ROOT  = CFG.get("SERVER_DONE_ROOT", r"\\tsclient\D\AUTO\done")
 UPLOAD_URL        = "https://www.youtube.com/upload"
 
 # Google Sheets — hỗ trợ cả tên field cũ và mới
