@@ -398,13 +398,25 @@ def _parse_time(s):
 
 # ┌──────────────────────────────────────────────────────────────────────┐
 # │ S7 - GOOGLE SHEETS (kết nối, đọc, ghi)                              │
-# │     + IPv4 toggle: bật khi cần mạng, tắt khi thao tác trình duyệt  │
 # └──────────────────────────────────────────────────────────────────────┘
 
 
-def gs_client():
+def gs_client(max_retries=3):
+    """Kết nối Google Sheets, retry nếu lỗi."""
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIAL_PATH, scope)
+    for attempt in range(1, max_retries + 1):
+        try:
+            client = gspread.authorize(creds)
+            # Test thử mở spreadsheet để chắc chắn hoạt động
+            client.open(SPREADSHEET_NAME)
+            return client
+        except Exception as e:
+            logging.warning(f"gs_client lan {attempt}/{max_retries} loi: {e}")
+            if attempt < max_retries:
+                time.sleep(10)
+                creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIAL_PATH, scope)
+    # Lần cuối: trả về client dù chưa test
     return gspread.authorize(creds)
 
 
@@ -1440,7 +1452,10 @@ def main():
         logging.error("Khong co mang -> bo qua phien nay.")
         return
 
-    cleanup_posted_codes()
+    try:
+        cleanup_posted_codes()
+    except Exception as e:
+        logging.warning(f"cleanup_posted_codes loi (khong anh huong): {e}")
 
     BROWSER_LAUNCH_WAIT_SEC = int(r(*HUMAN.browser_wait))
     CLICK_TIMEOUT_SEC       = int(r(*HUMAN.click_timeout))
