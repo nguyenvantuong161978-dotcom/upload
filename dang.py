@@ -1414,8 +1414,30 @@ def pre_stage_tomorrow(input_rows):
         logging.warning(f"Loi khi pre-stage ngay mai: {e}")
 
 
+def wait_for_internet(max_wait=1800):
+    """Chờ có mạng trước khi bắt đầu. Thử mỗi 30s, tối đa 30 phút."""
+    import socket
+    start = time.time()
+    while time.time() - start < max_wait:
+        try:
+            socket.create_connection(("oauth2.googleapis.com", 443), timeout=10).close()
+            return True
+        except Exception:
+            remaining = int(max_wait - (time.time() - start))
+            logging.warning(f"Khong co mang. Thu lai sau 30s... (con {remaining}s)")
+            time.sleep(30)
+    logging.error("Het %d phut van khong co mang.", max_wait // 60)
+    return False
+
+
 def main():
     random.seed()
+
+    # Kiểm tra mạng trước — tránh crash ngay khi gọi Google Sheets
+    if not wait_for_internet():
+        logging.error("Khong co mang -> bo qua phien nay.")
+        return
+
     cleanup_posted_codes()
 
     BROWSER_LAUNCH_WAIT_SEC = int(r(*HUMAN.browser_wait))
@@ -1606,4 +1628,9 @@ if __name__ == "__main__":
             main()
         except Exception as e:
             logging.error("Loi khi chay main(): %s", e)
+            # Nếu lỗi mạng → chờ 5 phút thay vì 3 tiếng
+            if "resolve" in str(e).lower() or "connection" in str(e).lower():
+                logging.info("Loi mang -> cho 5 phut roi thu lai.")
+                time.sleep(5 * 60)
+                continue
         time.sleep(3 * 60 * 60)
