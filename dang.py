@@ -401,40 +401,6 @@ def _parse_time(s):
 # │     + IPv4 toggle: bật khi cần mạng, tắt khi thao tác trình duyệt  │
 # └──────────────────────────────────────────────────────────────────────┘
 
-def _run_as_admin(ps_command):
-    """Chạy lệnh PowerShell với quyền Administrator."""
-    import subprocess
-    # Start-Process -Verb RunAs để nâng quyền admin
-    cmd = (
-        f'Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden '
-        f'-ArgumentList \'-Command {ps_command}\''
-    )
-    subprocess.run(['powershell', '-Command', cmd], capture_output=True, timeout=30)
-
-
-def enable_ipv4():
-    """Bật IPv4 trên tất cả network adapter (cần quyền Admin)."""
-    try:
-        _run_as_admin(
-            'Get-NetAdapter | ForEach-Object { Enable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }'
-        )
-        time.sleep(5)  # chờ mạng ổn định
-        logging.info("Da bat IPv4.")
-    except Exception as e:
-        logging.warning(f"Khong bat duoc IPv4: {e}")
-
-
-def disable_ipv4():
-    """Tắt IPv4 — trả về IPv6 only (cần quyền Admin)."""
-    try:
-        _run_as_admin(
-            'Get-NetAdapter | ForEach-Object { Disable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }'
-        )
-        time.sleep(2)
-        logging.info("Da tat IPv4.")
-    except Exception as e:
-        logging.warning(f"Khong tat duoc IPv4: {e}")
-
 
 def gs_client():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -1409,14 +1375,12 @@ def handle_step3_4_flow(active_row, client, code):
     else:
         logging.info("Khong thay 'kiemtra.png' -> khong can, tiep tuc.")
 
-    # === CẬP NHẬT TRẠNG THÁI (cần IPv4 để ghi Google Sheets) ===
-    enable_ipv4()
+    # === CẬP NHẬT TRẠNG THÁI ===
     try:
         update_source_status(client, code, "ĐÃ ĐĂNG")
         logging.info("Da cap nhat 'DA DANG' cho ma %s.", code)
     except Exception as e:
         logging.warning("Cap nhat trang thai loi: %s", e)
-    disable_ipv4()
 
     # Chờ 10 phút để YouTube xử lý
     logging.info("Cho 10 phut de YouTube xu ly truoc khi chuyen sang ma ke.")
@@ -1471,13 +1435,9 @@ def wait_for_internet(max_wait=1800):
 def main():
     random.seed()
 
-    # ===== GIAI ĐOẠN 1: BẬT IPv4 — đọc Google Sheets, copy file =====
-    enable_ipv4()
-
     # Kiểm tra mạng trước — tránh crash ngay khi gọi Google Sheets
     if not wait_for_internet():
         logging.error("Khong co mang -> bo qua phien nay.")
-        disable_ipv4()
         return
 
     cleanup_posted_codes()
@@ -1494,7 +1454,6 @@ def main():
     if not ready_codes:
         logging.info(f"Khong co ma thoa ({CHANNEL_CODE}, {STATUS_OK}) cho hom nay. Pre-stage ngay mai.")
         pre_stage_tomorrow(input_rows)
-        disable_ipv4()
         return
 
     # Lọc: chỉ giữ mã có đủ file ở local hoặc server
@@ -1507,7 +1466,6 @@ def main():
     if not ready_codes:
         logging.info("Khong con ma hop le sau khi kiem tra thu muc. Pre-stage ngay mai.")
         pre_stage_tomorrow(input_rows)
-        disable_ipv4()
         return
 
     logging.info(f"Phien nay se dang {len(ready_codes)} ma: {ready_codes}")
@@ -1518,9 +1476,6 @@ def main():
             ensure_local_folder(c)
         except Exception as e:
             logging.warning(f"Prestage loi {c}: {e}")
-
-    # ===== GIAI ĐOẠN 2: TẮT IPv4 — thao tác trình duyệt =====
-    disable_ipv4()
 
     # Đóng browser cũ → mở browser mới
     close_browsers_gently_in_rdp()
