@@ -1,0 +1,12 @@
+{
+    "CHANNEL_CODE": "KA2-T2",
+    "RUN_BROWSER_EXE": "C:\\Users\\Administrator\\Documents\\KA2-T2\\KA2-T2\\KA2-T2.exe",
+    "LOCAL_DONE_ROOT": "C:\\Users\\Administrator\\Desktop\\done",
+    "SERVER_DONE_ROOT": "Z:\\AUTO\\done",
+    "SPREADSHEET_NAME": "KA",
+    "INPUT_SHEET": "INPUT",
+    "SOURCE_SHEET": "NGUON",
+    "CREDENTIAL_PATH": "creds.json",
+    "STATUS_OK": "EDIT XONG",
+    "STATUS_COL": 48
+}

@@ -50,22 +50,28 @@ except Exception:
 
 
 # ┌──────────────────────────────────────────────────────────────────────┐
-# │ S2 - CẤU HÌNH KÊNH & ĐƯỜNG DẪN                                     │
+# │ S2 - CẤU HÌNH KÊNH & ĐƯỜNG DẪN (đọc từ config.json)               │
 # └──────────────────────────────────────────────────────────────────────┘
 
-CHANNEL_CODE      = "KA2-T2"
-RUN_BROWSER_EXE   = r"C:\Users\Administrator\Documents\KA2-T2\KA2-T2\KA2-T2.exe"
-LOCAL_DONE_ROOT   = r"C:\Users\Administrator\Desktop\done"
-SERVER_DONE_ROOT  = r"Z:\AUTO\done"
+import json
+
+_CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
+    CFG = json.load(_f)
+
+CHANNEL_CODE      = CFG["CHANNEL_CODE"]
+RUN_BROWSER_EXE   = CFG["RUN_BROWSER_EXE"]
+LOCAL_DONE_ROOT   = CFG["LOCAL_DONE_ROOT"]
+SERVER_DONE_ROOT  = CFG["SERVER_DONE_ROOT"]
 UPLOAD_URL        = "https://www.youtube.com/upload"
 
 # Google Sheets
-SPREADSHEET_NAME  = "KA"
-INPUT_SHEET       = "INPUT"
-SOURCE_SHEET      = "NGUON"
-CREDENTIAL_PATH   = "creds.json"
-STATUS_OK         = "EDIT XONG"
-STATUS_COL        = 48  # AV = cột 48
+SPREADSHEET_NAME  = CFG["SPREADSHEET_NAME"]
+INPUT_SHEET       = CFG.get("INPUT_SHEET", "INPUT")
+SOURCE_SHEET      = CFG.get("SOURCE_SHEET", "NGUON")
+CREDENTIAL_PATH   = CFG.get("CREDENTIAL_PATH", "creds.json")
+STATUS_OK         = CFG.get("STATUS_OK", "EDIT XONG")
+STATUS_COL        = CFG.get("STATUS_COL", 48)
 
 # Đường dẫn thư mục video
 BASE_DIR          = os.path.dirname(os.path.abspath(__file__))
