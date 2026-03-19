@@ -683,9 +683,7 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
 
             # === COPY ===
             ok = False
-            is_tsclient = src.startswith(r"\\tsclient")
-
-            if is_large and not is_tsclient:
+            if is_large:
                 # File lớn + ổ mạng thường: dùng robocopy
                 logging.info(f"  [{attempt}/{max_retries}] Thu robocopy: {src_name}")
                 ok = _copy_robocopy(src_dir, dst_dir, src_name)
