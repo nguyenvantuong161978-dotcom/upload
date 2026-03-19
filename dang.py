@@ -582,33 +582,50 @@ LARGE_FILE_THRESHOLD = 100 * 1024 * 1024
 
 
 def _copy_chunked(src, dst, src_size):
-    """Copy file theo từng chunk 64MB. Trả về True nếu dung lượng khớp.
-    Ưu điểm: phát hiện lỗi mạng sớm, không phải chờ copy xong mới biết."""
+    """Copy file theo từng chunk 64MB. Retry từng chunk nếu mất kết nối.
+    Không copy lại từ đầu khi đứt giữa chừng."""
     src_name = os.path.basename(src)
     copied = 0
-    total_chunks = (src_size + COPY_CHUNK_SIZE - 1) // COPY_CHUNK_SIZE
     last_log_pct = -1
+    CHUNK_RETRIES = 5       # retry mỗi chunk tối đa 5 lần
+    CHUNK_RETRY_WAIT = 30   # chờ 30s giữa mỗi retry chunk
 
-    with open(src, 'rb') as fsrc:
-        with open(dst, 'wb') as fdst:
-            while True:
-                chunk = fsrc.read(COPY_CHUNK_SIZE)
-                if not chunk:
+    with open(dst, 'wb') as fdst:
+        while copied < src_size:
+            chunk_ok = False
+            for chunk_try in range(1, CHUNK_RETRIES + 1):
+                try:
+                    with open(src, 'rb') as fsrc:
+                        fsrc.seek(copied)
+                        chunk = fsrc.read(COPY_CHUNK_SIZE)
+                    if not chunk:
+                        chunk_ok = True
+                        break
+                    fdst.write(chunk)
+                    fdst.flush()
+                    copied += len(chunk)
+                    chunk_ok = True
                     break
-                fdst.write(chunk)
-                copied += len(chunk)
+                except Exception as e:
+                    logging.warning(f"    Chunk loi tai {copied:,}/{src_size:,} "
+                                    f"(lan {chunk_try}/{CHUNK_RETRIES}): {e}")
+                    if chunk_try < CHUNK_RETRIES:
+                        time.sleep(CHUNK_RETRY_WAIT)
 
-                # Log tiến độ mỗi 10% cho file lớn
-                if src_size > LARGE_FILE_THRESHOLD:
-                    pct = int(copied * 100 / src_size)
-                    if pct // 10 > last_log_pct // 10:
-                        last_log_pct = pct
-                        logging.info(f"    {src_name}: {pct}%% ({copied:,}/{src_size:,} bytes)")
+            if not chunk_ok:
+                logging.error(f"    THAT BAI sau {CHUNK_RETRIES} lan retry chunk: {src_name}")
+                return False
 
-            # Flush buffer Python → OS
-            fdst.flush()
-            # Flush OS → đĩa thật sự (quan trọng cho mạng)
-            os.fsync(fdst.fileno())
+            # Log tiến độ mỗi 10%
+            if src_size > LARGE_FILE_THRESHOLD:
+                pct = int(copied * 100 / src_size)
+                if pct // 10 > last_log_pct // 10:
+                    last_log_pct = pct
+                    logging.info(f"    {src_name}: {pct}% ({copied:,}/{src_size:,} bytes)")
+
+        # Flush OS → đĩa
+        fdst.flush()
+        os.fsync(fdst.fileno())
 
     # Kiểm tra dung lượng cuối cùng
     dst_size = os.path.getsize(dst)
@@ -663,8 +680,10 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
 
             # === COPY ===
             ok = False
-            if is_large:
-                # File lớn: thử robocopy trước (tốt nhất cho mạng)
+            is_tsclient = src.startswith(r"\\tsclient")
+
+            if is_large and not is_tsclient:
+                # File lớn + ổ mạng thường: dùng robocopy
                 logging.info(f"  [{attempt}/{max_retries}] Thu robocopy: {src_name}")
                 ok = _copy_robocopy(src_dir, dst_dir, src_name)
                 if ok and os.path.exists(dst):
@@ -675,11 +694,8 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
                                         f"(dst={dst_size:,}, src={src_size:,})")
 
             if not ok:
-                # Fallback: copy theo chunk 64MB
-                if is_large and attempt == 1:
-                    logging.info(f"  Robocopy khong duoc -> dung chunked copy")
-                elif not is_large:
-                    pass  # file nhỏ luôn dùng chunk
+                # tsclient hoặc robocopy fail: dùng chunked copy
+                logging.info(f"  [{attempt}/{max_retries}] Chunked copy: {src_name}")
                 ok = _copy_chunked(src, dst, src_size)
 
             # === KIỂM TRA ===
