@@ -506,7 +506,8 @@ def has_required_files(dir_path: str) -> bool:
 
 
 def get_file_sizes(dir_path: str) -> dict:
-    """Trả về dict {filename: size} của các file bắt buộc (mp4, srt, ảnh)."""
+    """Trả về dict {filename_gốc: size} của các file bắt buộc (mp4, srt, ảnh).
+    Giữ nguyên tên file GỐC (viết hoa/thường) để copy đúng."""
     result = {}
     if not os.path.isdir(dir_path):
         return result
@@ -515,24 +516,26 @@ def get_file_sizes(dir_path: str) -> dict:
         if ext == ".mp4" or ext == ".srt" or ext in IMG_EXTS:
             fp = os.path.join(dir_path, name)
             try:
-                result[name.lower()] = os.path.getsize(fp)
+                result[name] = os.path.getsize(fp)  # giữ tên gốc
             except Exception:
                 pass
     return result
 
 
 def verify_local_matches_server(local_folder: str, server_folder: str) -> bool:
-    """So sánh TỪNG FILE giữa local và server.
-    Trả về True nếu mọi file trên server đều có ở local với CÙNG dung lượng.
-    Phát hiện file bị copy dở (size khác) hoặc thiếu file."""
+    """So sánh TỪNG FILE giữa local và server (case-insensitive).
+    Trả về True nếu mọi file trên server đều có ở local với CÙNG dung lượng."""
     server_files = get_file_sizes(server_folder)
     local_files = get_file_sizes(local_folder)
 
     if not server_files:
-        return True  # server không có gì để so
+        return True
+
+    # Tạo dict lowercase để so sánh case-insensitive
+    local_lower = {k.lower(): v for k, v in local_files.items()}
 
     for name, server_size in server_files.items():
-        local_size = local_files.get(name)
+        local_size = local_lower.get(name.lower())
         if local_size is None:
             logging.warning(f"  Thieu file o local: {name}")
             return False
@@ -773,14 +776,15 @@ def ensure_local_folder(code):
     # Copy TỪNG FILE — chỉ copy file thiếu hoặc sai dung lượng
     server_files = get_file_sizes(server_folder)
     local_files = get_file_sizes(local_folder)
+    local_lower = {k.lower(): v for k, v in local_files.items()}
     all_ok = True
 
     for filename, server_size in server_files.items():
-        src_path = os.path.join(server_folder, filename)
-        dst_path = os.path.join(local_folder, filename)
+        src_path = os.path.join(server_folder, filename)  # tên gốc từ server
+        dst_path = os.path.join(local_folder, filename)   # giữ nguyên tên gốc
 
-        # Nếu local đã có và đúng dung lượng → bỏ qua
-        local_size = local_files.get(filename)
+        # Nếu local đã có (case-insensitive) và đúng dung lượng → bỏ qua
+        local_size = local_lower.get(filename.lower())
         if local_size == server_size:
             logging.info(f"  OK (da co): {filename} ({server_size:,} bytes)")
             continue
