@@ -550,14 +550,25 @@ def smb_connect():
             logging.info(f"SMB ket noi OK: {SMB_DRIVE} -> {SMB_SERVER}")
             return True
         else:
-            logging.error(f"SMB ket noi loi: {result.stderr.strip()}")
-            if NEED_IPV4_TOGGLE:
-                _disable_ipv4()
-            return False
+            logging.warning(f"SMB that bai -> fallback ve tsclient")
+            return _fallback_tsclient()
     except Exception as e:
-        logging.error(f"SMB ket noi exception: {e}")
-        if NEED_IPV4_TOGGLE:
-            _disable_ipv4()
+        logging.warning(f"SMB exception: {e} -> fallback ve tsclient")
+        return _fallback_tsclient()
+
+
+def _fallback_tsclient():
+    """Fallback: dùng \\tsclient khi SMB fail."""
+    global SERVER_DONE_ROOT
+    if NEED_IPV4_TOGGLE:
+        _disable_ipv4()
+    tsclient_path = r"\\tsclient\D\AUTO\done"
+    if os.path.isdir(r"\\tsclient\D"):
+        SERVER_DONE_ROOT = tsclient_path
+        logging.info(f"Fallback tsclient OK: SERVER_DONE_ROOT={SERVER_DONE_ROOT}")
+        return True
+    else:
+        logging.error("tsclient cung khong san sang!")
         return False
 
 
