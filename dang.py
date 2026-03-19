@@ -1501,6 +1501,7 @@ def wait_for_internet(max_wait=1800):
 
 
 def main():
+    import traceback
     random.seed()
 
     # Kiểm tra mạng trước — tránh crash ngay khi gọi Google Sheets
@@ -1562,6 +1563,7 @@ def main():
     error_retry_count = {}  # đếm số lần retry khi video lỗi
 
     for round_idx, code in enumerate(ready_codes, 1):
+      try:
         if code in processed_codes:
             logging.info("Ma %s da xu ly. Bo qua.", code)
             continue
@@ -1739,6 +1741,13 @@ def main():
         processed_codes.add(code)
         first_time = False
 
+      except Exception as ex_code:
+        logging.error(f"LOI KHONG XAC DINH voi ma {code}: {ex_code}")
+        logging.error("Chi tiet:\n%s", traceback.format_exc())
+        logging.info(f"Bo qua ma {code}, tiep tuc ma tiep theo...")
+        first_time = False
+        continue
+
     logging.info("Da hoan thanh %d/%d ma trong danh sach.", len(processed_codes), len(ready_codes))
 
     # Pre-stage ngày mai
@@ -1747,15 +1756,25 @@ def main():
 
 if __name__ == "__main__":
     import traceback
+    fail_count = 0
     while True:
         try:
             main()
+            fail_count = 0  # reset nếu chạy thành công
         except Exception as e:
+            fail_count += 1
             logging.error("Loi khi chay main(): %s", e)
             logging.error("Chi tiet loi:\n%s", traceback.format_exc())
-            # Nếu lỗi mạng → chờ 5 phút thay vì 3 tiếng
+            # Lỗi mạng → chờ 2 phút
             if "resolve" in str(e).lower() or "connection" in str(e).lower():
-                logging.info("Loi mang -> cho 5 phut roi thu lai.")
-                time.sleep(5 * 60)
+                logging.info("Loi mang -> cho 2 phut roi thu lai.")
+                time.sleep(2 * 60)
                 continue
-        time.sleep(3 * 60 * 60)
+            # Lỗi khác → chờ tăng dần: 1p, 2p, 5p, 10p (tối đa 10 phút)
+            wait_min = min(fail_count * 2, 10)
+            logging.info(f"Loi lan {fail_count} -> cho {wait_min} phut roi thu lai.")
+            time.sleep(wait_min * 60)
+            continue
+        # Chạy xong OK → chờ 30 phút rồi kiểm tra lại (thay vì 3 tiếng)
+        logging.info("Xong phien. Cho 30 phut roi kiem tra ma moi...")
+        time.sleep(30 * 60)
