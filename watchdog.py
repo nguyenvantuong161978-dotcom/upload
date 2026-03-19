@@ -235,6 +235,7 @@ def do_smb_setup(signal_path):
         cfg["SMB_PASS"] = smb_pass
         cfg["SMB_DRIVE"] = smb_drive
         cfg["SERVER_DONE_ROOT"] = f"{smb_drive}\\AUTO\\done"
+        cfg["NEED_IPV4_TOGGLE"] = smb_data.get("NEED_IPV4_TOGGLE", True)
 
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)

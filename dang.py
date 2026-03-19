@@ -72,11 +72,12 @@ RUN_BROWSER_EXE   = CFG.get("RUN_BROWSER_EXE", os.path.join(_CHANNEL_DIR, f"{_AU
 LOCAL_DONE_ROOT   = CFG.get("LOCAL_DONE_ROOT", os.path.join(_USER_HOME, "Desktop", "done"))
 SERVER_DONE_ROOT  = CFG.get("SERVER_DONE_ROOT", r"\\tsclient\D\AUTO\done")
 
-# SMB — bật IPv4 khi kết nối, tắt khi ngắt
-SMB_SERVER = CFG.get("SMB_SERVER", "")     # \\192.168.88.254\D
-SMB_USER   = CFG.get("SMB_USER", "")            # smbuser
-SMB_PASS   = CFG.get("SMB_PASS", "")            # password
+# SMB — bật IPv4 khi kết nối (nếu cần), tắt khi ngắt
+SMB_SERVER = CFG.get("SMB_SERVER", "")
+SMB_USER   = CFG.get("SMB_USER", "")
+SMB_PASS   = CFG.get("SMB_PASS", "")
 SMB_DRIVE  = CFG.get("SMB_DRIVE", "Z:")
+NEED_IPV4_TOGGLE = CFG.get("NEED_IPV4_TOGGLE", True)  # False nếu dùng IPv6
 UPLOAD_URL        = "https://www.youtube.com/upload"
 
 # Google Sheets — hỗ trợ cả tên field cũ và mới
@@ -525,11 +526,12 @@ def _disable_ipv4():
 
 
 def smb_connect():
-    """Bật IPv4 → kết nối SMB drive."""
+    """Kết nối SMB drive. Bật IPv4 nếu cần (dùng IPv4 SMB)."""
     if not SMB_SERVER:
         return True
     try:
-        _enable_ipv4()
+        if NEED_IPV4_TOGGLE:
+            _enable_ipv4()
 
         # Ngắt kết nối cũ
         subprocess.run(f'net use {SMB_DRIVE} /delete /y',
@@ -549,16 +551,18 @@ def smb_connect():
             return True
         else:
             logging.error(f"SMB ket noi loi: {result.stderr.strip()}")
-            _disable_ipv4()
+            if NEED_IPV4_TOGGLE:
+                _disable_ipv4()
             return False
     except Exception as e:
         logging.error(f"SMB ket noi exception: {e}")
-        _disable_ipv4()
+        if NEED_IPV4_TOGGLE:
+            _disable_ipv4()
         return False
 
 
 def smb_disconnect():
-    """Ngắt SMB drive → tắt IPv4."""
+    """Ngắt SMB drive. Tắt IPv4 nếu đang dùng IPv4 SMB."""
     if not SMB_SERVER:
         return
     try:
@@ -567,7 +571,8 @@ def smb_disconnect():
         logging.info(f"SMB ngat ket noi: {SMB_DRIVE}")
     except Exception:
         pass
-    _disable_ipv4()
+    if NEED_IPV4_TOGGLE:
+        _disable_ipv4()
 
 
 def has_required_files(dir_path: str) -> bool:
