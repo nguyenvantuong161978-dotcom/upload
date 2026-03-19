@@ -1158,8 +1158,9 @@ def handle_metadata_flow(active_row):
     if pos_thumb_open:
         file_dialog_select_thumbnail()
     else:
-        logging.error("Khong thay hop thoai Open khi chon thumbnail.")
-        return
+        logging.warning("Khong thay hop thoai Open khi chon thumbnail -> bo qua, tiep tuc.")
+        # Nhan ESC de dong hop thoai neu no da mo nhung khong nhan dien duoc
+        pyautogui.press('escape'); rsleep("small")
 
     # === Chọn DANH SÁCH PHÁT ===
     logging.info("Cho anchor 'danhsachphat.png'...")
