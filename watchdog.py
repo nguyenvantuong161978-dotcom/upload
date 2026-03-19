@@ -18,6 +18,16 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHANNEL_DIR = os.path.dirname(BASE_DIR)
 
+# Doc version
+VERSION_FILE = os.path.join(BASE_DIR, "VERSION")
+VERSION = "?"
+if os.path.isfile(VERSION_FILE):
+    try:
+        with open(VERSION_FILE, "r") as f:
+            VERSION = f.read().strip()
+    except Exception:
+        pass
+
 _cfg_path = os.path.join(BASE_DIR, "config.json")
 CFG = {}
 if os.path.isfile(_cfg_path):
@@ -166,6 +176,7 @@ def write_status():
 
         data = {
             "channel": CHANNEL_CODE,
+            "version": VERSION,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "state": state,
             "dang_py": "running" if dang_alive else "stopped",

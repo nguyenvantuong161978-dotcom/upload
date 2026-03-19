@@ -88,6 +88,11 @@ if exist "%SRC_DIR%\DIEU_KHIEN.bat" (
     echo   [OK] DIEU_KHIEN.bat
 )
 
+if exist "%SRC_DIR%\VERSION" (
+    copy /y "%SRC_DIR%\VERSION" "%~dp0VERSION" >nul
+    for /f "delims=" %%V in ("%SRC_DIR%\VERSION") do echo   [OK] VERSION: %%V
+)
+
 if exist "%SRC_DIR%\update.bat" (
     copy /y "%SRC_DIR%\update.bat" "%~dp0update_new.bat" >nul
     echo   [OK] update.bat (ap dung lan sau)

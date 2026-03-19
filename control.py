@@ -10,6 +10,16 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COMMANDS_DIR = os.path.join(BASE_DIR, "commands")
 STATUS_DIR = os.path.join(BASE_DIR, "status")
 SETTINGS_FILE = os.path.join(BASE_DIR, "control_settings.json")
+
+# Doc version hien tai (tren may chu)
+VERSION_FILE = os.path.join(BASE_DIR, "VERSION")
+CURRENT_VERSION = "?"
+if os.path.isfile(VERSION_FILE):
+    try:
+        with open(VERSION_FILE, "r") as f:
+            CURRENT_VERSION = f.read().strip()
+    except Exception:
+        pass
 os.makedirs(COMMANDS_DIR, exist_ok=True)
 os.makedirs(STATUS_DIR, exist_ok=True)
 
@@ -108,8 +118,8 @@ class App:
         # Title + Setting
         title_frame = tk.Frame(self.root, bg="#1e1e2e")
         title_frame.pack(fill="x", padx=10, pady=(10, 0))
-        tk.Label(title_frame, text="DIEU KHIEN MAY AO", font=("Segoe UI", 14, "bold"),
-                 fg="#cdd6f4", bg="#1e1e2e").pack(side="left")
+        tk.Label(title_frame, text=f"DIEU KHIEN MAY AO  v{CURRENT_VERSION}",
+                 font=("Segoe UI", 14, "bold"), fg="#cdd6f4", bg="#1e1e2e").pack(side="left")
         tk.Button(title_frame, text="SETTING", bg="#585b70", fg="#cdd6f4",
                   font=("Segoe UI", 9, "bold"), width=8, relief="flat",
                   command=self.open_settings).pack(side="right")
@@ -341,7 +351,10 @@ class App:
         st = vm.get("state", "?")
         dp = vm.get("dang_py", "?")
         up = vm.get("uptime_minutes", 0)
+        ver = vm.get("version", "?")
         color = self.get_color(st)
+        is_outdated = ver != CURRENT_VERSION and ver != "?"
+        ver_color = "#f38ba8" if is_outdated else "#a6e3a1"
 
         row = tk.Frame(self.container, bg="#313244", pady=4, padx=8)
         row.pack(fill="x", pady=2)
@@ -350,10 +363,10 @@ class App:
                  bg="#313244", width=10, anchor="w").pack(side="left")
         tk.Label(row, text=st, font=("Consolas", 10), fg=color,
                  bg="#313244", width=10, anchor="w").pack(side="left")
-        tk.Label(row, text=f"dang.py={dp}", font=("Consolas", 9), fg="#a6adc8",
-                 bg="#313244", width=16, anchor="w").pack(side="left")
+        tk.Label(row, text=f"v{ver}", font=("Consolas", 9), fg=ver_color,
+                 bg="#313244", width=7, anchor="w").pack(side="left")
         tk.Label(row, text=f"{up}p", font=("Consolas", 9), fg="#a6adc8",
-                 bg="#313244", width=6).pack(side="left")
+                 bg="#313244", width=5).pack(side="left")
 
         for txt, cmd, clr in [("RUN", "run", "#a6e3a1"),
                                 ("STOP", "stop", "#f38ba8"),
