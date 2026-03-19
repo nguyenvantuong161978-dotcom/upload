@@ -7,6 +7,8 @@
 !dang.py
 !run.bat
 !update.bat
+!watchdog.py
+!control.bat
 !config.example.json
 !icon/
 !icon/**

@@ -14,11 +14,11 @@ echo   DANG KHOI DONG TOOL...
 echo ============================================
 echo.
 
-REM Chay dang.py trong cua so lenh moi
-start "Dang Video" python\python.exe "%~dp0dang.py"
+REM Chay watchdog (theo doi lenh tu may chu, chay ngam)
+start /MIN "Watchdog" python\python.exe "%~dp0watchdog.py"
 
-REM Chay cmt.py trong cua so lenh moi
-start "Tra loi binh luan" python\python.exe "%~dp0cmt.py"
+REM Chay dang.py (dang video)
+start "Dang Video" python\python.exe "%~dp0dang.py"
 
 echo Cac script da duoc khoi dong thanh cong!
 echo Ban co the dong cua so nay.

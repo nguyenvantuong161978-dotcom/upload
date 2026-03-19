@@ -68,6 +68,16 @@ if exist "%SRC_DIR%\run.bat" (
     echo   [OK] run.bat
 )
 
+if exist "%SRC_DIR%\watchdog.py" (
+    copy /y "%SRC_DIR%\watchdog.py" "%~dp0watchdog.py" >nul
+    echo   [OK] watchdog.py
+)
+
+if exist "%SRC_DIR%\control.bat" (
+    copy /y "%SRC_DIR%\control.bat" "%~dp0control.bat" >nul
+    echo   [OK] control.bat
+)
+
 if exist "%SRC_DIR%\update.bat" (
     copy /y "%SRC_DIR%\update.bat" "%~dp0update_new.bat" >nul
     echo   [OK] update.bat (ap dung lan sau)
