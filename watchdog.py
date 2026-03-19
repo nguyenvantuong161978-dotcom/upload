@@ -90,9 +90,18 @@ def kill_dang_and_browser():
     """Kill dang.py va browser. KHONG kill watchdog."""
     logging.info("Kill dang.py + browser...")
 
-    # Kill dang.py
+    # Kill dang.py theo window title
     subprocess.run(
         'taskkill /F /FI "WINDOWTITLE eq Dang Video" /T',
+        shell=True, capture_output=True, timeout=15
+    )
+    time.sleep(1)
+
+    # Kill tat ca python dang chay dang.py (phong truong hop title khac)
+    my_pid = os.getpid()
+    subprocess.run(
+        f'powershell -Command "Get-Process python* -ErrorAction SilentlyContinue | '
+        f'Where-Object {{ $_.Id -ne {my_pid} }} | Stop-Process -Force -ErrorAction SilentlyContinue"',
         shell=True, capture_output=True, timeout=15
     )
     time.sleep(2)
