@@ -644,12 +644,12 @@ def _copy_robocopy(src_dir, dst_dir, filename):
         src_dir,            # thư mục nguồn
         dst_dir,            # thư mục đích
         filename,           # chỉ copy 1 file này
-        '/R:3',             # retry 3 lần mỗi file
-        '/W:10',            # chờ 10s giữa mỗi retry
+        '/Z',               # restartable mode — copy từng phần, resume khi đứt
+        '/R:10',            # retry 10 lần mỗi file
+        '/W:30',            # chờ 30s giữa mỗi retry
         '/NP',              # không hiện progress bar
         '/NDL',             # không hiện tên thư mục
         '/NJH', '/NJS',     # không hiện header/summary
-        '/MT:1',            # 1 thread (ổn định hơn qua mạng)
     ]
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
