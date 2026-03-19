@@ -73,7 +73,18 @@ LOCAL_DONE_ROOT   = CFG.get("LOCAL_DONE_ROOT", os.path.join(_USER_HOME, "Desktop
 SERVER_DONE_ROOT  = CFG.get("SERVER_DONE_ROOT", r"\\tsclient\D\AUTO\done")
 
 # SMB — kết nối khi copy, ngắt khi xong (nhường slot cho máy khác)
-SMB_SERVER = CFG.get("SMB_SERVER", "")          # \\192.168.88.254\D
+# Auto-convert IPv6 sang ipv6-literal.net nếu config cũ dùng dấu ':'
+_raw_smb = CFG.get("SMB_SERVER", "")
+if _raw_smb and ":" in _raw_smb and "ipv6-literal" not in _raw_smb:
+    # Tách: \\2001:ee0::2\D → ip=2001:ee0::2, share=D
+    _parts = _raw_smb.lstrip("\\").split("\\")
+    _ip = _parts[0]
+    _share = _parts[1] if len(_parts) > 1 else "D"
+    _ip_lit = _ip.replace(":", "-").replace("---", "--") + ".ipv6-literal.net"
+    SMB_SERVER = f"\\\\{_ip_lit}\\{_share}"
+    logging.info(f"SMB auto-convert IPv6: {_raw_smb} -> {SMB_SERVER}")
+else:
+    SMB_SERVER = _raw_smb
 SMB_USER   = CFG.get("SMB_USER", "")            # smbuser
 SMB_PASS   = CFG.get("SMB_PASS", "")            # password
 SMB_DRIVE  = CFG.get("SMB_DRIVE", "Z:")
