@@ -814,13 +814,8 @@ def ensure_local_folder(code):
 
     local_enough  = os.path.isdir(local_folder) and has_required_files(local_folder)
 
-    # Kết nối SMB để kiểm tra server
-    smb_connect()
-
-    try:
-        return _do_ensure_local(code, local_folder, server_folder, local_enough)
-    finally:
-        smb_disconnect()
+    # SMB đã kết nối ở main() — không cần kết nối/ngắt ở đây
+    return _do_ensure_local(code, local_folder, server_folder, local_enough)
 
 
 def _do_ensure_local(code, local_folder, server_folder, local_enough):
@@ -1561,11 +1556,10 @@ def pre_stage_tomorrow(input_rows):
     try:
         tomorrow_codes = get_tomorrow_codes(input_rows)
         if tomorrow_codes:
-            smb_connect()
+            # SMB đã kết nối ở main()
             tmr_ok = [c for c in tomorrow_codes
                       if has_required_files(os.path.join(SERVER_DONE_ROOT, c))
                       or has_required_files(os.path.join(LOCAL_DONE_ROOT, c))]
-            smb_disconnect()
             if tmr_ok:
                 logging.info(f"Pre-stage NGAY MAI: {len(tmr_ok)} ma: {tmr_ok}")
                 for c in tmr_ok:
@@ -1619,14 +1613,15 @@ def main():
     input_rows = get_rows(client, INPUT_SHEET)
 
     # === Xác định danh sách mã cần đăng ===
+    # Kết nối SMB 1 lần cho toàn bộ phiên
+    smb_connect()
+
     ready_codes = get_all_ready_codes(input_rows)
     if not ready_codes:
         logging.info(f"Khong co ma thoa ({CHANNEL_CODE}, {STATUS_OK}) cho hom nay. Pre-stage ngay mai.")
         pre_stage_tomorrow(input_rows)
+        smb_disconnect()
         return
-
-    # Kết nối SMB để kiểm tra server
-    smb_connect()
 
     # Lọc: chỉ giữ mã có đủ file ở local hoặc server
     ready_codes_filtered = []
@@ -1639,12 +1634,12 @@ def main():
             logging.warning("Bo ma %s: thieu bo o ca local & server.", c)
     ready_codes = ready_codes_filtered
 
-    # Ngắt SMB sau khi kiểm tra (sẽ kết nối lại khi copy)
-    smb_disconnect()
+    # GIỮ kết nối SMB — sẽ ngắt khi xong tất cả mã
 
     if not ready_codes:
         logging.info("Khong con ma hop le sau khi kiem tra thu muc. Pre-stage ngay mai.")
         pre_stage_tomorrow(input_rows)
+        smb_disconnect()
         return
 
     logging.info(f"Phien nay se dang {len(ready_codes)} ma: {ready_codes}")
@@ -1859,6 +1854,9 @@ def main():
 
     # Pre-stage ngày mai
     pre_stage_tomorrow(input_rows)
+
+    # Ngắt SMB khi xong tất cả
+    smb_disconnect()
 
 
 if __name__ == "__main__":
