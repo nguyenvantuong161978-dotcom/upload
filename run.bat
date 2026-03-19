@@ -21,5 +21,4 @@ REM Chay dang.py (dang video)
 start "Dang Video" python\python.exe "%~dp0dang.py"
 
 echo Cac script da duoc khoi dong thanh cong!
-echo Ban co the dong cua so nay.
-timeout /t 5
+exit /b
