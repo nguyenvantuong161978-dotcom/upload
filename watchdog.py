@@ -104,13 +104,13 @@ def start_dang():
 
 
 def start_run_bat():
-    """Khoi dong run.bat (tat ca: watchdog + dang.py + cmt.py...)."""
+    """Khoi dong run.bat an (khong tao cua so thua)."""
     RUN_BAT = os.path.join(BASE_DIR, "run.bat")
     logging.info("Khoi dong run.bat...")
     subprocess.Popen(
-        f'cmd /c start "" "{RUN_BAT}"',
+        f'cmd /c "{RUN_BAT}"',
         shell=True, cwd=BASE_DIR,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+        creationflags=subprocess.CREATE_NO_WINDOW
     )
 
 
