@@ -123,6 +123,9 @@ def start_dang():
 
 def start_all_scripts():
     """Khoi dong dang.py (va cmt.py khi can) truc tiep. KHONG qua run.bat."""
+    if is_dang_running():
+        logging.info("dang.py da dang chay, khong khoi dong them.")
+        return
     logging.info("Khoi dong dang.py...")
     subprocess.Popen(
         f'start "Dang Video" "{PYTHON_EXE}" "{DANG_PY}"',
@@ -243,11 +246,15 @@ def do_smb_setup(signal_path):
         logging.info(f"Da cap nhat config.json: SMB={smb_server}, DRIVE={smb_drive}")
         logging.info(f"SERVER_DONE_ROOT={cfg['SERVER_DONE_ROOT']}")
 
-        # Restart dang.py de doc lai config moi
-        logging.info("Restart dang.py de ap dung config SMB moi...")
-        kill_dang_and_browser()
-        time.sleep(3)
-        start_all_scripts()
+        # Restart dang.py de doc lai config moi (chi khi khong co lenh update dang cho)
+        update_pending = os.path.isfile(os.path.join(COMMANDS_DIR, f"{CHANNEL_CODE}.update"))
+        if update_pending:
+            logging.info("Co lenh update dang cho -> khong restart, de update xu ly.")
+        else:
+            logging.info("Restart dang.py de ap dung config SMB moi...")
+            kill_dang_and_browser()
+            time.sleep(3)
+            start_all_scripts()
 
     except Exception as e:
         logging.error(f"smb_setup loi: {e}")
