@@ -1,9 +1,9 @@
 """
 DIEU KHIEN MAY AO — RUN / STOP / UPDATE + SETTING SMB
 """
-import os, json, time
+import os, json, time, subprocess, socket
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,12 +13,13 @@ SETTINGS_FILE = os.path.join(BASE_DIR, "control_settings.json")
 os.makedirs(COMMANDS_DIR, exist_ok=True)
 os.makedirs(STATUS_DIR, exist_ok=True)
 
-# SMB mac dinh
 DEFAULT_SMB = {
     "SMB_USER": "smbuser",
     "SMB_PASS": "159753",
     "SMB_DRIVE": "Z:",
-    "servers": []  # danh sach IP may chu: ["192.168.88.254", "192.168.88.100"]
+    "SHARE_PATH": "D:\\",
+    "SHARE_NAME": "D",
+    "servers": []
 }
 
 
@@ -26,7 +27,12 @@ def load_settings():
     if os.path.isfile(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                # merge defaults
+                for k, v in DEFAULT_SMB.items():
+                    if k not in data:
+                        data[k] = v
+                return data
         except Exception:
             pass
     return dict(DEFAULT_SMB)
@@ -37,6 +43,60 @@ def save_settings(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def get_ipv6():
+    """Lay IPv6 global cua may nay."""
+    try:
+        result = subprocess.run(
+            'powershell -Command "Get-NetIPAddress -AddressFamily IPv6 | Where-Object { $_.PrefixOrigin -ne \'WellKnown\' -and $_.SuffixOrigin -ne \'WellKnown\' -and $_.IPAddress -notlike \'fe80*\' -and $_.IPAddress -notlike \'::1\' } | Select-Object -First 1 -ExpandProperty IPAddress"',
+            shell=True, capture_output=True, text=True, timeout=10
+        )
+        ip = result.stdout.strip()
+        if ip:
+            return ip
+    except Exception:
+        pass
+    return ""
+
+
+def setup_smb_on_host(user, password, share_name, share_path):
+    """Tao user SMB + share thu muc tren may chu nay."""
+    errors = []
+
+    # 1. Tao user (neu chua co)
+    result = subprocess.run(f'net user {user} {password} /add',
+                            shell=True, capture_output=True, text=True, timeout=10)
+    if result.returncode == 0:
+        errors.append(f"[OK] Tao user: {user}")
+    elif "already exists" in result.stderr.lower() or "already exists" in result.stdout.lower():
+        # Update password
+        subprocess.run(f'net user {user} {password}',
+                       shell=True, capture_output=True, timeout=10)
+        errors.append(f"[OK] User da ton tai, cap nhat password: {user}")
+    else:
+        errors.append(f"[!] Tao user: {result.stdout.strip()} {result.stderr.strip()}")
+
+    # 2. Xoa share cu (neu co)
+    subprocess.run(f'net share {share_name} /delete /y',
+                   shell=True, capture_output=True, timeout=10)
+
+    # 3. Tao share moi
+    result = subprocess.run(
+        f'net share {share_name}="{share_path}" /grant:{user},FULL',
+        shell=True, capture_output=True, text=True, timeout=10)
+    if result.returncode == 0:
+        errors.append(f"[OK] Share: {share_name} -> {share_path}")
+    else:
+        errors.append(f"[!] Share: {result.stdout.strip()} {result.stderr.strip()}")
+
+    # 4. Cho phep SMB qua firewall
+    subprocess.run(
+        'netsh advfirewall firewall add rule name="SMB-In" dir=in action=allow protocol=tcp localport=445',
+        shell=True, capture_output=True, timeout=10)
+    errors.append("[OK] Firewall: port 445 da mo")
+
+    return errors
+
+
 class App:
     def __init__(self):
         self.settings = load_settings()
@@ -45,7 +105,7 @@ class App:
         self.root.configure(bg="#1e1e2e")
         self.root.resizable(True, True)
 
-        # ═══ TOP: Title + Setting button ═══
+        # Title + Setting
         title_frame = tk.Frame(self.root, bg="#1e1e2e")
         title_frame.pack(fill="x", padx=10, pady=(10, 0))
         tk.Label(title_frame, text="DIEU KHIEN MAY AO", font=("Segoe UI", 14, "bold"),
@@ -54,7 +114,7 @@ class App:
                   font=("Segoe UI", 9, "bold"), width=8, relief="flat",
                   command=self.open_settings).pack(side="right")
 
-        # ═══ ALL buttons ═══
+        # ALL buttons
         top = tk.Frame(self.root, bg="#1e1e2e")
         top.pack(fill="x", padx=10, pady=5)
         for txt, cmd, color in [("RUN ALL", "run", "#a6e3a1"),
@@ -64,11 +124,11 @@ class App:
                       width=12, relief="flat",
                       command=lambda c=cmd: self.send("ALL", c)).pack(side="left", padx=3)
 
-        # ═══ VM list ═══
+        # VM list
         self.container = tk.Frame(self.root, bg="#1e1e2e")
         self.container.pack(fill="both", expand=True, padx=10, pady=5)
 
-        # ═══ Status bar ═══
+        # Status bar
         self.status_lbl = tk.Label(self.root, text="", font=("Consolas", 9),
                                     fg="#a6adc8", bg="#1e1e2e", anchor="w")
         self.status_lbl.pack(fill="x", padx=10, pady=(0, 5))
@@ -76,120 +136,154 @@ class App:
         self.refresh()
         self.root.mainloop()
 
-    # ─── SMB SETTINGS WINDOW ───
+    # ─── SETTINGS WINDOW ───
     def open_settings(self):
         win = tk.Toplevel(self.root)
         win.title("SETTING - SMB MAY CHU")
         win.configure(bg="#1e1e2e")
-        win.geometry("500x450")
+        win.geometry("550x550")
         win.resizable(False, False)
-
         s = self.settings
 
-        # SMB chung
-        tk.Label(win, text="CAU HINH SMB CHUNG", font=("Segoe UI", 12, "bold"),
+        # === SECTION 1: Thong tin SMB ===
+        tk.Label(win, text="THONG TIN SMB", font=("Segoe UI", 12, "bold"),
                  fg="#cdd6f4", bg="#1e1e2e").pack(pady=(10, 5))
 
         common = tk.Frame(win, bg="#313244", padx=10, pady=8)
         common.pack(fill="x", padx=10, pady=5)
 
-        for i, (label, key, default) in enumerate([
+        fields = [
             ("User:", "SMB_USER", "smbuser"),
             ("Password:", "SMB_PASS", "159753"),
-            ("Drive:", "SMB_DRIVE", "Z:")
-        ]):
+            ("Drive:", "SMB_DRIVE", "Z:"),
+            ("Share name:", "SHARE_NAME", "D"),
+            ("Share path:", "SHARE_PATH", "D:\\"),
+        ]
+        for i, (label, key, default) in enumerate(fields):
             tk.Label(common, text=label, font=("Consolas", 10), fg="#a6adc8",
-                     bg="#313244", width=10, anchor="w").grid(row=i, column=0, pady=2)
+                     bg="#313244", width=12, anchor="w").grid(row=i, column=0, pady=2)
             entry = tk.Entry(common, font=("Consolas", 10), width=25, bg="#45475a",
                              fg="#cdd6f4", insertbackground="#cdd6f4", relief="flat")
             entry.insert(0, s.get(key, default))
             entry.grid(row=i, column=1, pady=2, padx=5)
             setattr(self, f"entry_{key}", entry)
 
-        # Danh sach may chu
-        tk.Label(win, text="DANH SACH MAY CHU (IP)", font=("Segoe UI", 12, "bold"),
-                 fg="#cdd6f4", bg="#1e1e2e").pack(pady=(15, 5))
+        # === SECTION 2: IPv6 may chu ===
+        tk.Label(win, text="IPv6 MAY CHU", font=("Segoe UI", 12, "bold"),
+                 fg="#cdd6f4", bg="#1e1e2e").pack(pady=(10, 5))
 
-        srv_frame = tk.Frame(win, bg="#1e1e2e")
-        srv_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        ipv6_frame = tk.Frame(win, bg="#313244", padx=10, pady=8)
+        ipv6_frame.pack(fill="x", padx=10, pady=5)
 
-        self.server_listbox = tk.Listbox(srv_frame, font=("Consolas", 11), bg="#313244",
-                                          fg="#a6e3a1", selectbackground="#585b70",
-                                          relief="flat", height=6)
-        self.server_listbox.pack(side="left", fill="both", expand=True)
+        self.ipv6_var = tk.StringVar(value=s.get("host_ipv6", ""))
+        tk.Label(ipv6_frame, text="IPv6:", font=("Consolas", 10), fg="#a6adc8",
+                 bg="#313244", width=12, anchor="w").pack(side="left")
+        self.ipv6_entry = tk.Entry(ipv6_frame, font=("Consolas", 10), width=30,
+                                    bg="#45475a", fg="#a6e3a1", insertbackground="#cdd6f4",
+                                    relief="flat", textvariable=self.ipv6_var)
+        self.ipv6_entry.pack(side="left", padx=5)
+        tk.Button(ipv6_frame, text="TU DONG", bg="#89b4fa", fg="#1e1e2e",
+                  font=("Segoe UI", 8, "bold"), relief="flat",
+                  command=self.auto_detect_ipv6).pack(side="left", padx=3)
 
-        for ip in s.get("servers", []):
-            self.server_listbox.insert("end", ip)
+        # === SECTION 3: Buttons ===
+        btn_frame = tk.Frame(win, bg="#1e1e2e")
+        btn_frame.pack(fill="x", padx=10, pady=10)
 
-        # Buttons ben phai
-        btn_frame = tk.Frame(srv_frame, bg="#1e1e2e")
-        btn_frame.pack(side="right", padx=(5, 0))
+        tk.Button(btn_frame, text="TAO SMB TREN MAY CHU", bg="#fab387", fg="#1e1e2e",
+                  font=("Segoe UI", 10, "bold"), width=25, relief="flat",
+                  command=lambda: self.create_smb(win)).pack(pady=3)
+        tk.Button(btn_frame, text="GUI CAU HINH TOI TAT CA VM", bg="#a6e3a1", fg="#1e1e2e",
+                  font=("Segoe UI", 10, "bold"), width=25, relief="flat",
+                  command=lambda: self.send_smb_to_vms(win)).pack(pady=3)
+        tk.Button(btn_frame, text="DONG", bg="#585b70", fg="#cdd6f4",
+                  font=("Segoe UI", 10, "bold"), width=10, relief="flat",
+                  command=win.destroy).pack(pady=3)
 
-        self.new_ip_entry = tk.Entry(btn_frame, font=("Consolas", 10), width=16,
-                                      bg="#45475a", fg="#cdd6f4", insertbackground="#cdd6f4",
-                                      relief="flat")
-        self.new_ip_entry.pack(pady=2)
-        self.new_ip_entry.insert(0, "192.168.88.")
+        # Log area
+        self.setting_log = tk.Text(win, font=("Consolas", 9), bg="#313244", fg="#cdd6f4",
+                                    height=5, relief="flat", state="disabled")
+        self.setting_log.pack(fill="x", padx=10, pady=(0, 10))
 
-        tk.Button(btn_frame, text="THEM", bg="#a6e3a1", fg="#1e1e2e",
-                  font=("Segoe UI", 9, "bold"), width=8, relief="flat",
-                  command=self.add_server).pack(pady=2)
-        tk.Button(btn_frame, text="XOA", bg="#f38ba8", fg="#1e1e2e",
-                  font=("Segoe UI", 9, "bold"), width=8, relief="flat",
-                  command=self.remove_server).pack(pady=2)
+    def auto_detect_ipv6(self):
+        ipv6 = get_ipv6()
+        if ipv6:
+            self.ipv6_var.set(ipv6)
+            self.setting_log_msg(f"IPv6 phat hien: {ipv6}")
+        else:
+            self.setting_log_msg("Khong tim thay IPv6 global.")
 
-        # Luu + Dong
-        bottom = tk.Frame(win, bg="#1e1e2e")
-        bottom.pack(fill="x", padx=10, pady=10)
-        tk.Button(bottom, text="LUU & AP DUNG", bg="#a6e3a1", fg="#1e1e2e",
-                  font=("Segoe UI", 10, "bold"), width=15, relief="flat",
-                  command=lambda: self.save_and_apply(win)).pack(side="left", padx=3)
-        tk.Button(bottom, text="DONG", bg="#585b70", fg="#cdd6f4",
-                  font=("Segoe UI", 10, "bold"), width=8, relief="flat",
-                  command=win.destroy).pack(side="right", padx=3)
+    def setting_log_msg(self, msg):
+        self.setting_log.config(state="normal")
+        self.setting_log.insert("end", f"[{datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+        self.setting_log.see("end")
+        self.setting_log.config(state="disabled")
 
-        # Huong dan
-        tk.Label(win, text="Khi LUU, thong tin SMB se duoc gui toi tat ca may ao qua lenh 'smb_setup'",
-                 font=("Segoe UI", 8), fg="#585b70", bg="#1e1e2e").pack(pady=(0, 5))
-
-    def add_server(self):
-        ip = self.new_ip_entry.get().strip()
-        if ip and ip not in self.server_listbox.get(0, "end"):
-            self.server_listbox.insert("end", ip)
-            self.new_ip_entry.delete(0, "end")
-            self.new_ip_entry.insert(0, "192.168.88.")
-
-    def remove_server(self):
-        sel = self.server_listbox.curselection()
-        if sel:
-            self.server_listbox.delete(sel[0])
-
-    def save_and_apply(self, win):
-        """Luu settings va tao file smb_setup cho tat ca VM."""
+    def _read_entries(self):
+        """Doc gia tri tu cac entry."""
         self.settings["SMB_USER"] = self.entry_SMB_USER.get().strip()
         self.settings["SMB_PASS"] = self.entry_SMB_PASS.get().strip()
         self.settings["SMB_DRIVE"] = self.entry_SMB_DRIVE.get().strip()
-        self.settings["servers"] = list(self.server_listbox.get(0, "end"))
-
+        self.settings["SHARE_NAME"] = self.entry_SHARE_NAME.get().strip()
+        self.settings["SHARE_PATH"] = self.entry_SHARE_PATH.get().strip()
+        self.settings["host_ipv6"] = self.ipv6_var.get().strip()
         save_settings(self.settings)
 
-        # Tao file smb_setup cho tat ca VM
-        # Watchdog se doc file nay va cap nhat config.json tren VM
+    def create_smb(self, win):
+        """Tao user + share SMB tren may chu nay."""
+        self._read_entries()
+        s = self.settings
+
+        if not s["SMB_USER"] or not s["SMB_PASS"]:
+            messagebox.showwarning("Thieu thong tin", "Can co User va Password!")
+            return
+
+        self.setting_log_msg("Dang tao SMB share...")
+        results = setup_smb_on_host(s["SMB_USER"], s["SMB_PASS"],
+                                     s["SHARE_NAME"], s["SHARE_PATH"])
+        for r in results:
+            self.setting_log_msg(r)
+
+        # Luu IPv6 neu chua co
+        if not s.get("host_ipv6"):
+            ipv6 = get_ipv6()
+            if ipv6:
+                self.ipv6_var.set(ipv6)
+                self.settings["host_ipv6"] = ipv6
+                save_settings(self.settings)
+                self.setting_log_msg(f"IPv6 tu dong: {ipv6}")
+
+        self.setting_log_msg("HOAN TAT! Gio hay an 'GUI CAU HINH TOI TAT CA VM'.")
+
+    def send_smb_to_vms(self, win):
+        """Gui thong tin SMB toi tat ca VM qua commands/."""
+        self._read_entries()
+        s = self.settings
+
+        ipv6 = s.get("host_ipv6", "")
+        if not ipv6:
+            messagebox.showwarning("Thieu IPv6",
+                                   "Can co IPv6 may chu! An 'TU DONG' de phat hien.")
+            return
+
         smb_data = {
-            "SMB_USER": self.settings["SMB_USER"],
-            "SMB_PASS": self.settings["SMB_PASS"],
-            "SMB_DRIVE": self.settings["SMB_DRIVE"],
-            "servers": self.settings["servers"]
+            "SMB_SERVER": f"\\\\{ipv6}\\{s['SHARE_NAME']}",
+            "SMB_USER": s["SMB_USER"],
+            "SMB_PASS": s["SMB_PASS"],
+            "SMB_DRIVE": s["SMB_DRIVE"],
+            "servers": [ipv6]
         }
+
         smb_file = os.path.join(COMMANDS_DIR, "ALL.smb_setup")
         try:
             with open(smb_file, "w", encoding="utf-8") as f:
                 json.dump(smb_data, f, ensure_ascii=False, indent=2)
-            self.log(f"Da luu setting + gui smb_setup toi tat ca VM")
+            self.setting_log_msg(f"Da gui smb_setup toi tat ca VM:")
+            self.setting_log_msg(f"  SMB: \\\\{ipv6}\\{s['SHARE_NAME']}")
+            self.setting_log_msg(f"  Drive: {s['SMB_DRIVE']}")
+            self.log(f"SMB config da gui toi tat ca VM")
         except Exception as e:
-            self.log(f"LOI luu: {e}")
-
-        win.destroy()
+            self.setting_log_msg(f"LOI: {e}")
 
     # ─── CORE ───
     def send(self, channel, cmd):
