@@ -2,8 +2,12 @@
 WATCHDOG — Theo doi lenh tu may chu qua thu muc chia se
 Kiem tra \\tsclient\D\AUTO\commands\ moi 30 giay
 Bao cao trang thai ve \\tsclient\D\AUTO\status\
+
+Lenh ho tro: run, stop, restart, update, kill
+- run/stop/restart/update: watchdog VAN SONG, chi dieu khien dang.py
+- kill: giet tat ca KE CA watchdog (khan cap)
 """
-import os, sys, json, time, subprocess, logging, signal
+import os, sys, json, time, subprocess, logging
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
@@ -14,7 +18,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CHANNEL_DIR = os.path.dirname(BASE_DIR)
 
-# Doc config.json
 _cfg_path = os.path.join(BASE_DIR, "config.json")
 CFG = {}
 if os.path.isfile(_cfg_path):
@@ -24,7 +27,6 @@ if os.path.isfile(_cfg_path):
     except Exception:
         pass
 
-# Auto-detect CHANNEL_CODE tu duong dan
 CHANNEL_CODE = CFG.get("CHANNEL_CODE", os.path.basename(CHANNEL_DIR))
 BROWSER_EXE = CFG.get("RUN_BROWSER_EXE", "")
 if not BROWSER_EXE:
@@ -32,18 +34,19 @@ if not BROWSER_EXE:
 
 COMMANDS_DIR = r"\\tsclient\D\AUTO\commands"
 STATUS_DIR = r"\\tsclient\D\AUTO\status"
-CHECK_INTERVAL = 30     # giay
-STATUS_INTERVAL = 60    # giay
+CHECK_INTERVAL = 30
+STATUS_INTERVAL = 60
 
 PYTHON_EXE = os.path.join(BASE_DIR, "python", "python.exe")
-RUN_BAT = os.path.join(BASE_DIR, "run.bat")
+DANG_PY = os.path.join(BASE_DIR, "dang.py")
 UPDATE_BAT = os.path.join(BASE_DIR, "update.bat")
 
 # Trang thai
 start_time = time.time()
-state = "running"
-current_code = ""
+state = "idle"
 last_error = ""
+
+SUPPORTED_CMDS = ["run", "stop", "restart", "update", "kill"]
 
 logging.info(f"Watchdog khoi dong: CHANNEL={CHANNEL_CODE}")
 logging.info(f"Theo doi: {COMMANDS_DIR}")
@@ -65,11 +68,11 @@ def is_dang_running():
         return False
 
 
-def kill_all():
-    """Kill tat ca: dang.py, browser, cmd."""
-    logging.info("Kill tat ca process...")
+def kill_dang_and_browser():
+    """Kill dang.py va browser. KHONG kill watchdog."""
+    logging.info("Kill dang.py + browser...")
 
-    # Kill dang.py (theo window title)
+    # Kill dang.py
     subprocess.run(
         'taskkill /F /FI "WINDOWTITLE eq Dang Video" /T',
         shell=True, capture_output=True, timeout=15
@@ -88,25 +91,31 @@ def kill_all():
             shell=True, capture_output=True, timeout=10
         )
     time.sleep(1)
-    logging.info("Da kill tat ca.")
+    logging.info("Da kill dang.py + browser.")
+
+
+def start_dang():
+    """Khoi dong dang.py trong cua so moi."""
+    logging.info("Khoi dong dang.py...")
+    subprocess.Popen(
+        f'start "Dang Video" "{PYTHON_EXE}" "{DANG_PY}"',
+        shell=True, cwd=BASE_DIR
+    )
 
 
 def detect_signal():
-    """Kiem tra co file lenh trong COMMANDS_DIR khong.
-    Tra ve (command, filepath) hoac None."""
+    """Kiem tra file lenh. Tra ve (command, filepath) hoac None."""
     try:
         if not os.path.isdir(COMMANDS_DIR):
             return None
 
-        # Uu tien lenh rieng cho channel truoc, roi ALL
         for prefix in [CHANNEL_CODE, "ALL"]:
-            for cmd in ["kill", "update", "restart"]:
+            for cmd in SUPPORTED_CMDS:
                 fpath = os.path.join(COMMANDS_DIR, f"{prefix}.{cmd}")
                 if os.path.isfile(fpath):
                     logging.info(f"Phat hien lenh: {prefix}.{cmd}")
                     return (cmd, fpath)
-    except Exception as e:
-        # \\tsclient khong san sang (RDP disconnect)
+    except Exception:
         pass
     return None
 
@@ -124,7 +133,7 @@ def delete_signal(fpath):
 
 
 def write_status():
-    """Ghi trang thai ra file JSON de may chu doc."""
+    """Ghi trang thai ra file JSON."""
     global state
     try:
         os.makedirs(STATUS_DIR, exist_ok=True)
@@ -132,15 +141,18 @@ def write_status():
 
         uptime = int((time.time() - start_time) / 60)
         dang_alive = is_dang_running()
-        if not dang_alive and state == "running":
-            state = "dang.py stopped"
+
+        # Cap nhat state tu dong
+        if dang_alive and state in ("idle", "stopped"):
+            state = "running"
+        elif not dang_alive and state == "running":
+            state = "stopped"
 
         data = {
             "channel": CHANNEL_CODE,
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "state": state,
             "dang_py": "running" if dang_alive else "stopped",
-            "current_code": current_code,
             "last_error": last_error,
             "uptime_minutes": uptime
         }
@@ -149,73 +161,100 @@ def write_status():
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     except Exception:
-        # \\tsclient khong san sang
         pass
 
 
-def start_run_bat():
-    """Khoi dong run.bat trong process moi."""
-    logging.info(f"Khoi dong run.bat...")
-    subprocess.Popen(
-        f'cmd /c start "" "{RUN_BAT}"',
-        shell=True,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-    )
+# ═══════════════════════════════════════════
+#  XU LY LENH (watchdog van song, tru kill)
+# ═══════════════════════════════════════════
+
+def do_run(signal_path):
+    """Chi khoi dong dang.py (neu chua chay)."""
+    global state
+    delete_signal(signal_path)
+
+    if is_dang_running():
+        logging.info("dang.py da dang chay, bo qua lenh RUN.")
+        return
+
+    logging.info("=== RUN ===")
+    state = "starting"
+    write_status()
+    start_dang()
+    time.sleep(5)
+    state = "running"
+    write_status()
 
 
-# ═══════════════════════════════════════════
-#  XU LY LENH
-# ═══════════════════════════════════════════
+def do_stop(signal_path):
+    """Dung dang.py + browser. Watchdog van song."""
+    global state
+    logging.info("=== STOP ===")
+    state = "stopping"
+    write_status()
+    kill_dang_and_browser()
+    delete_signal(signal_path)
+    state = "stopped"
+    write_status()
+    logging.info("Da stop. Watchdog van hoat dong, cho lenh tiep.")
+
 
 def do_restart(signal_path):
-    """Kill all → xoa lenh → chay lai run.bat → thoat."""
+    """Kill dang.py + browser → khoi dong lai dang.py. Watchdog van song."""
     global state
+    logging.info("=== RESTART ===")
     state = "restarting"
     write_status()
-    logging.info("=== RESTART ===")
-    kill_all()
+    kill_dang_and_browser()
     delete_signal(signal_path)
     time.sleep(3)
-    start_run_bat()
-    logging.info("Da restart. Thoat watchdog cu.")
-    sys.exit(0)
+    start_dang()
+    time.sleep(5)
+    state = "running"
+    write_status()
+    logging.info("Da restart xong.")
 
 
 def do_update(signal_path):
-    """Kill all → chay update.bat → xoa lenh → chay lai run.bat → thoat."""
-    global state
+    """Kill dang.py → chay update.bat → khoi dong lai dang.py. Watchdog van song."""
+    global state, last_error
+    logging.info("=== UPDATE ===")
     state = "updating"
     write_status()
-    logging.info("=== UPDATE ===")
-    kill_all()
+    kill_dang_and_browser()
     time.sleep(2)
 
-    # Chay update.bat (dong bo, cho xong)
+    # Chay update.bat
     logging.info("Chay update.bat...")
     try:
         subprocess.run(
             f'cmd /c "{UPDATE_BAT}"',
-            shell=True, timeout=600  # toi da 10 phut
+            shell=True, timeout=600, cwd=BASE_DIR
         )
+        logging.info("update.bat hoan tat.")
     except subprocess.TimeoutExpired:
-        logging.error("update.bat timeout sau 10 phut.")
+        last_error = "update.bat timeout 10 phut"
+        logging.error(last_error)
     except Exception as e:
-        logging.error(f"update.bat loi: {e}")
+        last_error = f"update.bat loi: {e}"
+        logging.error(last_error)
 
     delete_signal(signal_path)
     time.sleep(3)
-    start_run_bat()
-    logging.info("Da update + restart. Thoat watchdog cu.")
-    sys.exit(0)
+    start_dang()
+    time.sleep(5)
+    state = "running"
+    write_status()
+    logging.info("Da update + restart xong.")
 
 
 def do_kill(signal_path):
-    """Kill all → xoa lenh → thoat."""
+    """Giet TAT CA ke ca watchdog. Chi dung khi khan cap."""
     global state
+    logging.info("=== KILL ALL ===")
     state = "killed"
     write_status()
-    logging.info("=== KILL ===")
-    kill_all()
+    kill_dang_and_browser()
     delete_signal(signal_path)
     logging.info("Da kill tat ca. Thoat watchdog.")
     sys.exit(0)
@@ -229,28 +268,38 @@ def main():
     global state
     last_status_write = 0
 
+    # Kiem tra dang.py co dang chay khong khi watchdog bat dau
+    if is_dang_running():
+        state = "running"
+    else:
+        state = "idle"
+
     while True:
         try:
             # 1) Kiem tra lenh tu may chu
             sig = detect_signal()
             if sig:
                 cmd, fpath = sig
-                if cmd == "restart":
+                if cmd == "run":
+                    do_run(fpath)
+                elif cmd == "stop":
+                    do_stop(fpath)
+                elif cmd == "restart":
                     do_restart(fpath)
                 elif cmd == "update":
                     do_update(fpath)
                 elif cmd == "kill":
                     do_kill(fpath)
 
-            # 2) Kiem tra dang.py con song khong
-            if not is_dang_running():
-                if state == "running":
-                    state = "dang.py stopped"
-                    logging.warning("dang.py da dung! Cho lenh restart tu may chu.")
-            else:
-                state = "running"
+            # 2) Tu dong cap nhat state
+            if state not in ("stopped", "killed", "stopping", "starting",
+                             "restarting", "updating"):
+                if is_dang_running():
+                    state = "running"
+                else:
+                    state = "stopped"
 
-            # 3) Ghi trang thai moi 60 giay
+            # 3) Ghi trang thai
             now = time.time()
             if now - last_status_write >= STATUS_INTERVAL:
                 write_status()
