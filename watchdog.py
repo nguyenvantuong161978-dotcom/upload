@@ -46,7 +46,7 @@ start_time = time.time()
 state = "idle"
 last_error = ""
 
-SUPPORTED_CMDS = ["run", "stop", "update"]
+SUPPORTED_CMDS = ["run", "stop", "update", "smb_setup"]
 
 logging.info(f"Watchdog khoi dong: CHANNEL={CHANNEL_CODE}")
 logging.info(f"Theo doi: {COMMANDS_DIR}")
@@ -181,8 +181,53 @@ def write_status():
 
 
 # ═══════════════════════════════════════════
-#  XU LY LENH (watchdog van song, tru kill)
+#  XU LY LENH (watchdog van song)
 # ═══════════════════════════════════════════
+
+def do_smb_setup(signal_path):
+    """Nhan thong tin SMB tu may chu, cap nhat config.json."""
+    logging.info("=== SMB SETUP ===")
+    try:
+        with open(signal_path, "r", encoding="utf-8") as f:
+            smb_data = json.load(f)
+
+        servers = smb_data.get("servers", [])
+        smb_user = smb_data.get("SMB_USER", "smbuser")
+        smb_pass = smb_data.get("SMB_PASS", "")
+        smb_drive = smb_data.get("SMB_DRIVE", "Z:")
+
+        if not servers:
+            logging.warning("Khong co IP may chu nao trong smb_setup.")
+            delete_signal(signal_path)
+            return
+
+        # Doc config.json hien tai
+        cfg_path = os.path.join(BASE_DIR, "config.json")
+        cfg = {}
+        if os.path.isfile(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+
+        # Cap nhat SMB — dung IP dau tien lam mac dinh
+        # VM se ket noi toi may chu gan nhat (IP dau trong danh sach)
+        smb_server = f"\\\\{servers[0]}\\D"
+        cfg["SMB_SERVER"] = smb_server
+        cfg["SMB_USER"] = smb_user
+        cfg["SMB_PASS"] = smb_pass
+        cfg["SMB_DRIVE"] = smb_drive
+        cfg["SERVER_DONE_ROOT"] = f"{smb_drive}\\AUTO\\done"
+
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+
+        logging.info(f"Da cap nhat config.json: SMB={smb_server}, DRIVE={smb_drive}")
+        logging.info(f"SERVER_DONE_ROOT={cfg['SERVER_DONE_ROOT']}")
+
+    except Exception as e:
+        logging.error(f"smb_setup loi: {e}")
+
+    delete_signal(signal_path)
+
 
 def do_run(signal_path):
     """Chay run.bat (khoi dong tat ca: dang.py, cmt.py...)."""
@@ -279,6 +324,8 @@ def main():
                     do_stop(fpath)
                 elif cmd == "update":
                     do_update(fpath)
+                elif cmd == "smb_setup":
+                    do_smb_setup(fpath)
 
             # 2) Tu dong cap nhat state
             if state not in ("stopped", "killed", "stopping", "starting",
