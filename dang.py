@@ -1561,9 +1561,11 @@ def pre_stage_tomorrow(input_rows):
     try:
         tomorrow_codes = get_tomorrow_codes(input_rows)
         if tomorrow_codes:
+            smb_connect()
             tmr_ok = [c for c in tomorrow_codes
                       if has_required_files(os.path.join(SERVER_DONE_ROOT, c))
                       or has_required_files(os.path.join(LOCAL_DONE_ROOT, c))]
+            smb_disconnect()
             if tmr_ok:
                 logging.info(f"Pre-stage NGAY MAI: {len(tmr_ok)} ma: {tmr_ok}")
                 for c in tmr_ok:
@@ -1623,12 +1625,22 @@ def main():
         pre_stage_tomorrow(input_rows)
         return
 
+    # Kết nối SMB để kiểm tra server
+    smb_connect()
+
     # Lọc: chỉ giữ mã có đủ file ở local hoặc server
-    ready_codes = [c for c in ready_codes
-                   if has_required_files(os.path.join(LOCAL_DONE_ROOT, c))
-                   or has_required_files(os.path.join(SERVER_DONE_ROOT, c))]
-    for c in set(get_all_ready_codes(input_rows)) - set(ready_codes):
-        logging.warning("Bo ma %s: thieu bo o ca local & server.", c)
+    ready_codes_filtered = []
+    for c in ready_codes:
+        if has_required_files(os.path.join(LOCAL_DONE_ROOT, c)):
+            ready_codes_filtered.append(c)
+        elif has_required_files(os.path.join(SERVER_DONE_ROOT, c)):
+            ready_codes_filtered.append(c)
+        else:
+            logging.warning("Bo ma %s: thieu bo o ca local & server.", c)
+    ready_codes = ready_codes_filtered
+
+    # Ngắt SMB sau khi kiểm tra (sẽ kết nối lại khi copy)
+    smb_disconnect()
 
     if not ready_codes:
         logging.info("Khong con ma hop le sau khi kiem tra thu muc. Pre-stage ngay mai.")
