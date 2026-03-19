@@ -695,7 +695,10 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
                                         f"(dst={dst_size:,}, src={src_size:,})")
 
             if not ok:
-                # tsclient hoặc robocopy fail: dùng chunked copy
+                # Robocopy fail → chờ 30s cho nhả file trước khi chunked copy
+                if is_large:
+                    logging.info(f"  Robocopy khong duoc -> cho 30s roi thu chunked copy")
+                    time.sleep(30)
                 logging.info(f"  [{attempt}/{max_retries}] Chunked copy: {src_name}")
                 ok = _copy_chunked(src, dst, src_size)
 
