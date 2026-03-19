@@ -650,6 +650,8 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
     dst_dir = os.path.dirname(dst)
     is_large = src_size > LARGE_FILE_THRESHOLD
 
+    last_error = ""
+
     if is_large:
         logging.info(f"  File lon ({src_size / (1024**3):.1f} GB): {src_name}")
 
@@ -689,17 +691,19 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
                                      f"{src_name} ({src_size:,} bytes)")
                     return True
                 else:
-                    logging.warning(f"  [{attempt}/{max_retries}] {src_name}: "
-                                    f"size khong khop (src={src_size:,}, dst={dst_size:,})")
+                    last_error = f"size khong khop (src={src_size:,}, dst={dst_size:,})"
+                    logging.warning(f"  [{attempt}/{max_retries}] {src_name}: {last_error}")
             else:
+                last_error = "copy that bai"
                 logging.warning(f"  [{attempt}/{max_retries}] Copy that bai: {src_name}")
 
             # Xóa file lỗi
             if os.path.exists(dst):
                 os.remove(dst)
 
-        except Exception as e:
-            logging.warning(f"  [{attempt}/{max_retries}] Loi copy {src_name}: {e}")
+        except Exception as exc:
+            last_error = str(exc)
+            logging.warning(f"  [{attempt}/{max_retries}] Loi copy {src_name}: {exc}")
             if os.path.exists(dst):
                 try:
                     os.remove(dst)
@@ -708,7 +712,7 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
 
         # Chờ trước khi retry — Permission denied cần chờ lâu hơn
         if attempt < max_retries:
-            if "permission" in str(e).lower() or "denied" in str(e).lower():
+            if "permission" in last_error.lower() or "denied" in last_error.lower():
                 wait = attempt * 60  # 60s, 120s, 180s — file có thể đang bị lock
                 logging.info(f"  Permission denied -> cho {wait}s (file co the dang bi lock)...")
             else:
