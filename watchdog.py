@@ -103,15 +103,20 @@ def start_dang():
     )
 
 
-def start_run_bat():
-    """Khoi dong run.bat an (khong tao cua so thua)."""
-    RUN_BAT = os.path.join(BASE_DIR, "run.bat")
-    logging.info("Khoi dong run.bat...")
+def start_all_scripts():
+    """Khoi dong dang.py (va cmt.py khi can) truc tiep. KHONG qua run.bat."""
+    logging.info("Khoi dong dang.py...")
     subprocess.Popen(
-        f'cmd /c "{RUN_BAT}"',
-        shell=True, cwd=BASE_DIR,
-        creationflags=subprocess.CREATE_NO_WINDOW
+        f'start "Dang Video" "{PYTHON_EXE}" "{DANG_PY}"',
+        shell=True, cwd=BASE_DIR
     )
+    # Sau nay them cmt.py:
+    # CMT_PY = os.path.join(BASE_DIR, "cmt.py")
+    # if os.path.isfile(CMT_PY):
+    #     subprocess.Popen(
+    #         f'start "Tra loi binh luan" "{PYTHON_EXE}" "{CMT_PY}"',
+    #         shell=True, cwd=BASE_DIR
+    #     )
 
 
 def detect_signal():
@@ -193,7 +198,7 @@ def do_run(signal_path):
     write_status()
     kill_dang_and_browser()  # don sach truoc
     time.sleep(2)
-    start_run_bat()
+    start_all_scripts()
     time.sleep(8)
     state = "running"
     write_status()
@@ -239,7 +244,7 @@ def do_update(signal_path):
 
     delete_signal(signal_path)
     time.sleep(3)
-    start_run_bat()
+    start_all_scripts()
     time.sleep(8)
     state = "running"
     write_status()
