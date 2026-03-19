@@ -91,12 +91,19 @@ def kill_dang_and_browser():
     logging.info("Kill dang.py + browser...")
     my_pid = os.getpid()
 
-    # 1) Kill cmd + python theo window title (ca tree)
-    for title in ["Dang Video", "Tra loi binh luan", "Select Dang Video"]:
+    # 1) Kill cmd + python theo window title (ca tree, ke ca "Administrator: ...")
+    for title in ["Dang Video", "Administrator: Dang Video",
+                   "Administrator:  Dang Video",
+                   "Tra loi binh luan", "Administrator: Tra loi binh luan"]:
         subprocess.run(
             f'taskkill /F /FI "WINDOWTITLE eq {title}" /T',
             shell=True, capture_output=True, timeout=10
         )
+    # Wildcard: bat ky cua so nao co "Dang Video" trong title
+    subprocess.run(
+        'powershell -Command "Get-Process | Where-Object { $_.MainWindowTitle -like \'*Dang Video*\' } | Stop-Process -Force -ErrorAction SilentlyContinue"',
+        shell=True, capture_output=True, timeout=15
+    )
     time.sleep(1)
 
     # 2) Kill tat ca python.exe tru watchdog
