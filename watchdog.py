@@ -58,8 +58,16 @@ last_error = ""
 
 SUPPORTED_CMDS = ["run", "stop", "update", "smb_setup"]
 
-logging.info(f"Watchdog khoi dong: CHANNEL={CHANNEL_CODE}")
+logging.info(f"Watchdog khoi dong: CHANNEL={CHANNEL_CODE}, VERSION={VERSION}")
 logging.info(f"Theo doi: {COMMANDS_DIR}")
+
+# Xoa ket noi SMB cu (persistent) neu co — tranh chiem o dia
+try:
+    _smb_drive = CFG.get("SMB_DRIVE", "Z:")
+    subprocess.run(f'net use {_smb_drive} /delete /y',
+                   shell=True, capture_output=True, timeout=10)
+except Exception:
+    pass
 
 
 # ═══════════════════════════════════════════
