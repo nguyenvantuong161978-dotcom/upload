@@ -53,21 +53,6 @@ def save_settings(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def get_ipv6():
-    """Lay IPv6 global cua may nay."""
-    try:
-        result = subprocess.run(
-            'powershell -Command "Get-NetIPAddress -AddressFamily IPv6 | Where-Object { $_.PrefixOrigin -ne \'WellKnown\' -and $_.SuffixOrigin -ne \'WellKnown\' -and $_.IPAddress -notlike \'fe80*\' -and $_.IPAddress -notlike \'::1\' } | Select-Object -First 1 -ExpandProperty IPAddress"',
-            shell=True, capture_output=True, text=True, timeout=10
-        )
-        ip = result.stdout.strip()
-        if ip:
-            return ip
-    except Exception:
-        pass
-    return ""
-
-
 def setup_smb_on_host(user, password, share_name, share_path):
     """Tao user SMB + share thu muc tren may chu nay."""
     errors = []
@@ -178,23 +163,23 @@ class App:
             entry.grid(row=i, column=1, pady=2, padx=5)
             setattr(self, f"entry_{key}", entry)
 
-        # === SECTION 2: IPv6 may chu ===
-        tk.Label(win, text="IPv6 MAY CHU", font=("Segoe UI", 12, "bold"),
+        # === SECTION 2: IP may chu ===
+        tk.Label(win, text="IP MAY CHU (IPv4)", font=("Segoe UI", 12, "bold"),
                  fg="#cdd6f4", bg="#1e1e2e").pack(pady=(10, 5))
 
-        ipv6_frame = tk.Frame(win, bg="#313244", padx=10, pady=8)
-        ipv6_frame.pack(fill="x", padx=10, pady=5)
+        ip_frame = tk.Frame(win, bg="#313244", padx=10, pady=8)
+        ip_frame.pack(fill="x", padx=10, pady=5)
 
-        self.ipv6_var = tk.StringVar(value=s.get("host_ipv6", ""))
-        tk.Label(ipv6_frame, text="IPv6:", font=("Consolas", 10), fg="#a6adc8",
+        self.ip_var = tk.StringVar(value=s.get("host_ip", "192.168.88.254"))
+        tk.Label(ip_frame, text="IPv4:", font=("Consolas", 10), fg="#a6adc8",
                  bg="#313244", width=12, anchor="w").pack(side="left")
-        self.ipv6_entry = tk.Entry(ipv6_frame, font=("Consolas", 10), width=30,
-                                    bg="#45475a", fg="#a6e3a1", insertbackground="#cdd6f4",
-                                    relief="flat", textvariable=self.ipv6_var)
-        self.ipv6_entry.pack(side="left", padx=5)
-        tk.Button(ipv6_frame, text="TU DONG", bg="#89b4fa", fg="#1e1e2e",
+        self.ip_entry = tk.Entry(ip_frame, font=("Consolas", 10), width=20,
+                                  bg="#45475a", fg="#a6e3a1", insertbackground="#cdd6f4",
+                                  relief="flat", textvariable=self.ip_var)
+        self.ip_entry.pack(side="left", padx=5)
+        tk.Button(ip_frame, text="TU DONG", bg="#89b4fa", fg="#1e1e2e",
                   font=("Segoe UI", 8, "bold"), relief="flat",
-                  command=self.auto_detect_ipv6).pack(side="left", padx=3)
+                  command=self.auto_detect_ip).pack(side="left", padx=3)
 
         # === SECTION 3: Buttons ===
         btn_frame = tk.Frame(win, bg="#1e1e2e")
@@ -215,13 +200,19 @@ class App:
                                     height=5, relief="flat", state="disabled")
         self.setting_log.pack(fill="x", padx=10, pady=(0, 10))
 
-    def auto_detect_ipv6(self):
-        ipv6 = get_ipv6()
-        if ipv6:
-            self.ipv6_var.set(ipv6)
-            self.setting_log_msg(f"IPv6 phat hien: {ipv6}")
-        else:
-            self.setting_log_msg("Khong tim thay IPv6 global.")
+    def auto_detect_ip(self):
+        try:
+            result = subprocess.run(
+                'powershell -Command "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike \'127.*\' -and $_.IPAddress -notlike \'169.*\' } | Select-Object -First 1).IPAddress"',
+                shell=True, capture_output=True, text=True, timeout=10)
+            ip = result.stdout.strip()
+            if ip:
+                self.ip_var.set(ip)
+                self.setting_log_msg(f"IPv4 phat hien: {ip}")
+            else:
+                self.setting_log_msg("Khong tim thay IPv4.")
+        except Exception:
+            self.setting_log_msg("Loi khi phat hien IPv4.")
 
     def setting_log_msg(self, msg):
         self.setting_log.config(state="normal")
@@ -236,7 +227,7 @@ class App:
         self.settings["SMB_DRIVE"] = self.entry_SMB_DRIVE.get().strip()
         self.settings["SHARE_NAME"] = self.entry_SHARE_NAME.get().strip()
         self.settings["SHARE_PATH"] = self.entry_SHARE_PATH.get().strip()
-        self.settings["host_ipv6"] = self.ipv6_var.get().strip()
+        self.settings["host_ip"] = self.ip_var.get().strip()
         save_settings(self.settings)
 
     def create_smb(self, win):
@@ -254,14 +245,11 @@ class App:
         for r in results:
             self.setting_log_msg(r)
 
-        # Luu IPv6 neu chua co
-        if not s.get("host_ipv6"):
-            ipv6 = get_ipv6()
-            if ipv6:
-                self.ipv6_var.set(ipv6)
-                self.settings["host_ipv6"] = ipv6
-                save_settings(self.settings)
-                self.setting_log_msg(f"IPv6 tu dong: {ipv6}")
+        # Luu IP neu chua co
+        if not s.get("host_ip"):
+            self.auto_detect_ip()
+            self.settings["host_ip"] = self.ip_var.get().strip()
+            save_settings(self.settings)
 
         self.setting_log_msg("HOAN TAT! Gio hay an 'GUI CAU HINH TOI TAT CA VM'.")
 
@@ -270,10 +258,10 @@ class App:
         self._read_entries()
         s = self.settings
 
-        ipv6 = s.get("host_ipv6", "")
-        if not ipv6:
-            messagebox.showwarning("Thieu IPv6",
-                                   "Can co IPv6 may chu! An 'TU DONG' de phat hien.")
+        ip = s.get("host_ip", "")
+        if not ip:
+            messagebox.showwarning("Thieu IP",
+                                   "Can co IPv4 may chu! An 'TU DONG' de phat hien.")
             return
 
         smb_data = {
@@ -281,14 +269,14 @@ class App:
             "SMB_PASS": s["SMB_PASS"],
             "SMB_DRIVE": s["SMB_DRIVE"],
             "SHARE_NAME": s["SHARE_NAME"],
-            "servers": [ipv6]
+            "servers": [ip]
         }
 
         data_str = json.dumps(smb_data, ensure_ascii=False, indent=2)
         self.send("ALL", "smb_setup", data=data_str)
         try:
             self.setting_log_msg(f"Da gui smb_setup toi tung VM:")
-            self.setting_log_msg(f"  SMB: \\\\{ipv6}\\{s['SHARE_NAME']}")
+            self.setting_log_msg(f"  SMB: \\\\{ip}\\{s['SHARE_NAME']}")
             self.setting_log_msg(f"  Drive: {s['SMB_DRIVE']}")
             self.log(f"SMB config da gui toi tat ca VM")
         except Exception as e:

@@ -72,19 +72,8 @@ RUN_BROWSER_EXE   = CFG.get("RUN_BROWSER_EXE", os.path.join(_CHANNEL_DIR, f"{_AU
 LOCAL_DONE_ROOT   = CFG.get("LOCAL_DONE_ROOT", os.path.join(_USER_HOME, "Desktop", "done"))
 SERVER_DONE_ROOT  = CFG.get("SERVER_DONE_ROOT", r"\\tsclient\D\AUTO\done")
 
-# SMB — kết nối khi copy, ngắt khi xong (nhường slot cho máy khác)
-# Auto-convert IPv6 sang ipv6-literal.net nếu config cũ dùng dấu ':'
-_raw_smb = CFG.get("SMB_SERVER", "")
-if _raw_smb and ":" in _raw_smb and "ipv6-literal" not in _raw_smb:
-    # Tách: \\2001:ee0::2\D → ip=2001:ee0::2, share=D
-    _parts = _raw_smb.lstrip("\\").split("\\")
-    _ip = _parts[0]
-    _share = _parts[1] if len(_parts) > 1 else "D"
-    _ip_lit = _ip.replace(":", "-").replace("---", "--") + ".ipv6-literal.net"
-    SMB_SERVER = f"\\\\{_ip_lit}\\{_share}"
-    logging.info(f"SMB auto-convert IPv6: {_raw_smb} -> {SMB_SERVER}")
-else:
-    SMB_SERVER = _raw_smb
+# SMB — bật IPv4 khi kết nối, tắt khi ngắt
+SMB_SERVER = CFG.get("SMB_SERVER", "")     # \\192.168.88.254\D
 SMB_USER   = CFG.get("SMB_USER", "")            # smbuser
 SMB_PASS   = CFG.get("SMB_PASS", "")            # password
 SMB_DRIVE  = CFG.get("SMB_DRIVE", "Z:")
@@ -512,16 +501,41 @@ def get_tomorrow_codes(rows):
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
-def smb_connect():
-    """Kết nối SMB drive (IPv6 hoặc IPv4). Ngắt cái cũ nếu đang dùng."""
-    if not SMB_SERVER:
-        return True  # không dùng SMB, dùng tsclient
+def _enable_ipv4():
+    """Bật IPv4 tạm thời."""
     try:
-        # Ngắt kết nối cũ (nếu có)
+        subprocess.run(
+            'powershell -Command "Get-NetAdapter | Enable-NetAdapterBinding -ComponentID ms_tcpip -ErrorAction SilentlyContinue"',
+            shell=True, capture_output=True, timeout=15)
+        time.sleep(5)
+        logging.info("IPv4 da bat.")
+    except Exception:
+        pass
+
+
+def _disable_ipv4():
+    """Tắt IPv4."""
+    try:
+        subprocess.run(
+            'powershell -Command "Get-NetAdapter | Disable-NetAdapterBinding -ComponentID ms_tcpip -ErrorAction SilentlyContinue"',
+            shell=True, capture_output=True, timeout=15)
+        logging.info("IPv4 da tat.")
+    except Exception:
+        pass
+
+
+def smb_connect():
+    """Bật IPv4 → kết nối SMB drive."""
+    if not SMB_SERVER:
+        return True
+    try:
+        _enable_ipv4()
+
+        # Ngắt kết nối cũ
         subprocess.run(f'net use {SMB_DRIVE} /delete /y',
                        shell=True, capture_output=True, timeout=10)
         time.sleep(2)
-        # Kết nối mới
+
         cmd = f'net use {SMB_DRIVE} "{SMB_SERVER}" /user:{SMB_USER} {SMB_PASS} /persistent:no'
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
         if result.returncode == 0:
@@ -529,14 +543,16 @@ def smb_connect():
             return True
         else:
             logging.error(f"SMB ket noi loi: {result.stderr.strip()}")
+            _disable_ipv4()
             return False
     except Exception as e:
         logging.error(f"SMB ket noi exception: {e}")
+        _disable_ipv4()
         return False
 
 
 def smb_disconnect():
-    """Ngắt SMB drive — nhường slot cho máy khác."""
+    """Ngắt SMB drive → tắt IPv4."""
     if not SMB_SERVER:
         return
     try:
@@ -545,6 +561,7 @@ def smb_disconnect():
         logging.info(f"SMB ngat ket noi: {SMB_DRIVE}")
     except Exception:
         pass
+    _disable_ipv4()
 
 
 def has_required_files(dir_path: str) -> bool:

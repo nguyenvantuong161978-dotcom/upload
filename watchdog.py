@@ -227,14 +227,9 @@ def do_smb_setup(signal_path):
             with open(cfg_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
 
-        # Cap nhat SMB — dung IP dau tien
-        # IPv6 can format dac biet: 2001:ee0::2 -> 2001-ee0--2.ipv6-literal.net
+        # Cap nhat SMB — dung IPv4
         ip = servers[0]
-        if ":" in ip:
-            ip_literal = ip.replace(":", "-").replace("---", "--") + ".ipv6-literal.net"
-            smb_server = f"\\\\{ip_literal}\\{smb_data.get('SHARE_NAME', 'D')}"
-        else:
-            smb_server = f"\\\\{ip}\\{smb_data.get('SHARE_NAME', 'D')}"
+        smb_server = f"\\\\{ip}\\{smb_data.get('SHARE_NAME', 'D')}"
         cfg["SMB_SERVER"] = smb_server
         cfg["SMB_USER"] = smb_user
         cfg["SMB_PASS"] = smb_pass
