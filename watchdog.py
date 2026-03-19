@@ -46,7 +46,7 @@ start_time = time.time()
 state = "idle"
 last_error = ""
 
-SUPPORTED_CMDS = ["run", "stop", "restart", "update", "kill"]
+SUPPORTED_CMDS = ["run", "stop", "update"]
 
 logging.info(f"Watchdog khoi dong: CHANNEL={CHANNEL_CODE}")
 logging.info(f"Theo doi: {COMMANDS_DIR}")
@@ -100,6 +100,17 @@ def start_dang():
     subprocess.Popen(
         f'start "Dang Video" "{PYTHON_EXE}" "{DANG_PY}"',
         shell=True, cwd=BASE_DIR
+    )
+
+
+def start_run_bat():
+    """Khoi dong run.bat (tat ca: watchdog + dang.py + cmt.py...)."""
+    RUN_BAT = os.path.join(BASE_DIR, "run.bat")
+    logging.info("Khoi dong run.bat...")
+    subprocess.Popen(
+        f'cmd /c start "" "{RUN_BAT}"',
+        shell=True, cwd=BASE_DIR,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
     )
 
 
@@ -169,7 +180,7 @@ def write_status():
 # ═══════════════════════════════════════════
 
 def do_run(signal_path):
-    """Chi khoi dong dang.py (neu chua chay)."""
+    """Chay run.bat (khoi dong tat ca: dang.py, cmt.py...)."""
     global state
     delete_signal(signal_path)
 
@@ -180,10 +191,13 @@ def do_run(signal_path):
     logging.info("=== RUN ===")
     state = "starting"
     write_status()
-    start_dang()
-    time.sleep(5)
+    kill_dang_and_browser()  # don sach truoc
+    time.sleep(2)
+    start_run_bat()
+    time.sleep(8)
     state = "running"
     write_status()
+    logging.info("Da chay run.bat xong.")
 
 
 def do_stop(signal_path):
@@ -197,22 +211,6 @@ def do_stop(signal_path):
     state = "stopped"
     write_status()
     logging.info("Da stop. Watchdog van hoat dong, cho lenh tiep.")
-
-
-def do_restart(signal_path):
-    """Kill dang.py + browser → khoi dong lai dang.py. Watchdog van song."""
-    global state
-    logging.info("=== RESTART ===")
-    state = "restarting"
-    write_status()
-    kill_dang_and_browser()
-    delete_signal(signal_path)
-    time.sleep(3)
-    start_dang()
-    time.sleep(5)
-    state = "running"
-    write_status()
-    logging.info("Da restart xong.")
 
 
 def do_update(signal_path):
@@ -241,23 +239,13 @@ def do_update(signal_path):
 
     delete_signal(signal_path)
     time.sleep(3)
-    start_dang()
-    time.sleep(5)
+    start_run_bat()
+    time.sleep(8)
     state = "running"
     write_status()
-    logging.info("Da update + restart xong.")
+    logging.info("Da update + run xong.")
 
 
-def do_kill(signal_path):
-    """Giet TAT CA ke ca watchdog. Chi dung khi khan cap."""
-    global state
-    logging.info("=== KILL ALL ===")
-    state = "killed"
-    write_status()
-    kill_dang_and_browser()
-    delete_signal(signal_path)
-    logging.info("Da kill tat ca. Thoat watchdog.")
-    sys.exit(0)
 
 
 # ═══════════════════════════════════════════
@@ -284,12 +272,8 @@ def main():
                     do_run(fpath)
                 elif cmd == "stop":
                     do_stop(fpath)
-                elif cmd == "restart":
-                    do_restart(fpath)
                 elif cmd == "update":
                     do_update(fpath)
-                elif cmd == "kill":
-                    do_kill(fpath)
 
             # 2) Tu dong cap nhat state
             if state not in ("stopped", "killed", "stopping", "starting",
