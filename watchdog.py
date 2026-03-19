@@ -87,24 +87,35 @@ def is_dang_running():
 
 
 def kill_dang_and_browser():
-    """Kill dang.py va browser. KHONG kill watchdog."""
+    """Kill dang.py + browser + cmd. KHONG kill watchdog."""
     logging.info("Kill dang.py + browser...")
+    my_pid = os.getpid()
 
-    # Kill dang.py theo window title
+    # 1) Kill cmd + python theo window title (ca tree)
+    for title in ["Dang Video", "Tra loi binh luan", "Select Dang Video"]:
+        subprocess.run(
+            f'taskkill /F /FI "WINDOWTITLE eq {title}" /T',
+            shell=True, capture_output=True, timeout=10
+        )
+    time.sleep(1)
+
+    # 2) Kill tat ca python.exe tru watchdog
     subprocess.run(
-        'taskkill /F /FI "WINDOWTITLE eq Dang Video" /T',
+        f'powershell -Command "'
+        f'Get-WmiObject Win32_Process -Filter \\"Name=\'python.exe\'\\" | '
+        f'Where-Object {{ $_.ProcessId -ne {my_pid} }} | '
+        f'ForEach-Object {{ $_.Terminate() }}'
+        f'"',
         shell=True, capture_output=True, timeout=15
     )
     time.sleep(1)
 
-    # Kill tat ca python dang chay dang.py (phong truong hop title khac)
-    my_pid = os.getpid()
+    # 3) Backup: taskkill tat ca python tru PID cua minh
     subprocess.run(
-        f'powershell -Command "Get-Process python* -ErrorAction SilentlyContinue | '
-        f'Where-Object {{ $_.Id -ne {my_pid} }} | Stop-Process -Force -ErrorAction SilentlyContinue"',
+        f'wmic process where "name=\'python.exe\' and processid != {my_pid}" call terminate',
         shell=True, capture_output=True, timeout=15
     )
-    time.sleep(2)
+    time.sleep(1)
 
     # Kill browser
     exe_name = os.path.basename(BROWSER_EXE) if BROWSER_EXE else ""
