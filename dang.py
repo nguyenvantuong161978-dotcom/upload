@@ -534,10 +534,16 @@ def smb_connect():
         # Ngắt kết nối cũ
         subprocess.run(f'net use {SMB_DRIVE} /delete /y',
                        shell=True, capture_output=True, timeout=10)
-        time.sleep(2)
+        time.sleep(5)
 
-        cmd = f'net use {SMB_DRIVE} "{SMB_SERVER}" /user:{SMB_USER} {SMB_PASS} /persistent:no'
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        # Retry kết nối SMB tối đa 3 lần
+        for attempt in range(1, 4):
+            cmd = f'net use {SMB_DRIVE} "{SMB_SERVER}" /user:{SMB_USER} {SMB_PASS} /persistent:no'
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+            if result.returncode == 0:
+                break
+            logging.warning(f"SMB lan {attempt}/3 loi: {result.stderr.strip()}")
+            time.sleep(10)
         if result.returncode == 0:
             logging.info(f"SMB ket noi OK: {SMB_DRIVE} -> {SMB_SERVER}")
             return True
