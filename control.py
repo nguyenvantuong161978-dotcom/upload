@@ -284,11 +284,10 @@ class App:
             "servers": [ipv6]
         }
 
-        smb_file = os.path.join(COMMANDS_DIR, "ALL.smb_setup")
+        data_str = json.dumps(smb_data, ensure_ascii=False, indent=2)
+        self.send("ALL", "smb_setup", data=data_str)
         try:
-            with open(smb_file, "w", encoding="utf-8") as f:
-                json.dump(smb_data, f, ensure_ascii=False, indent=2)
-            self.setting_log_msg(f"Da gui smb_setup toi tat ca VM:")
+            self.setting_log_msg(f"Da gui smb_setup toi tung VM:")
             self.setting_log_msg(f"  SMB: \\\\{ipv6}\\{s['SHARE_NAME']}")
             self.setting_log_msg(f"  Drive: {s['SMB_DRIVE']}")
             self.log(f"SMB config da gui toi tat ca VM")
@@ -296,14 +295,42 @@ class App:
             self.setting_log_msg(f"LOI: {e}")
 
     # ─── CORE ───
-    def send(self, channel, cmd):
-        fpath = os.path.join(COMMANDS_DIR, f"{channel}.{cmd}")
+    def _get_all_channels(self):
+        """Lay danh sach channel tu status files."""
+        channels = []
         try:
-            with open(fpath, "w") as f:
-                f.write(datetime.now().isoformat())
-            self.log(f"Da gui: {cmd} -> {channel}")
-        except Exception as e:
-            self.log(f"LOI: {e}")
+            for f in os.listdir(STATUS_DIR):
+                if f.endswith(".json"):
+                    channels.append(f.replace(".json", ""))
+        except Exception:
+            pass
+        return channels
+
+    def send(self, channel, cmd, data=None):
+        """Gui lenh. Neu channel=ALL, tao file rieng cho TUNG VM."""
+        if channel == "ALL":
+            channels = self._get_all_channels()
+            if not channels:
+                self.log("Khong co VM nao de gui lenh!")
+                return
+            count = 0
+            for ch in channels:
+                fpath = os.path.join(COMMANDS_DIR, f"{ch}.{cmd}")
+                try:
+                    with open(fpath, "w", encoding="utf-8") as f:
+                        f.write(data if data else datetime.now().isoformat())
+                    count += 1
+                except Exception:
+                    pass
+            self.log(f"Da gui: {cmd} -> {count}/{len(channels)} VM")
+        else:
+            fpath = os.path.join(COMMANDS_DIR, f"{channel}.{cmd}")
+            try:
+                with open(fpath, "w", encoding="utf-8") as f:
+                    f.write(data if data else datetime.now().isoformat())
+                self.log(f"Da gui: {cmd} -> {channel}")
+            except Exception as e:
+                self.log(f"LOI: {e}")
 
     def log(self, msg):
         self.status_lbl.config(text=f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
