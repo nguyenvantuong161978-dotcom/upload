@@ -78,6 +78,16 @@ if exist "%SRC_DIR%\control.bat" (
     echo   [OK] control.bat
 )
 
+if exist "%SRC_DIR%\control.py" (
+    copy /y "%SRC_DIR%\control.py" "%~dp0control.py" >nul
+    echo   [OK] control.py
+)
+
+if exist "%SRC_DIR%\DIEU_KHIEN.bat" (
+    copy /y "%SRC_DIR%\DIEU_KHIEN.bat" "%~dp0DIEU_KHIEN.bat" >nul
+    echo   [OK] DIEU_KHIEN.bat
+)
+
 if exist "%SRC_DIR%\update.bat" (
     copy /y "%SRC_DIR%\update.bat" "%~dp0update_new.bat" >nul
     echo   [OK] update.bat (ap dung lan sau)
