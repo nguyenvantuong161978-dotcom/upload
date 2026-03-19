@@ -500,11 +500,37 @@ def get_tomorrow_codes(rows):
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
+def _enable_ipv4():
+    """Bật IPv4 tạm thời để kết nối SMB."""
+    try:
+        subprocess.run(
+            'powershell -Command "Get-NetAdapter | Enable-NetAdapterBinding -ComponentID ms_tcpip -ErrorAction SilentlyContinue"',
+            shell=True, capture_output=True, timeout=15)
+        time.sleep(3)  # chờ mạng ổn định
+        logging.info("IPv4 da bat.")
+    except Exception:
+        pass
+
+
+def _disable_ipv4():
+    """Tắt IPv4 sau khi xong SMB."""
+    try:
+        subprocess.run(
+            'powershell -Command "Get-NetAdapter | Disable-NetAdapterBinding -ComponentID ms_tcpip -ErrorAction SilentlyContinue"',
+            shell=True, capture_output=True, timeout=15)
+        logging.info("IPv4 da tat.")
+    except Exception:
+        pass
+
+
 def smb_connect():
-    """Kết nối SMB drive. Ngắt cái cũ nếu đang dùng."""
+    """Bật IPv4 → kết nối SMB drive. Ngắt cái cũ nếu đang dùng."""
     if not SMB_SERVER:
         return True  # không dùng SMB, dùng tsclient
     try:
+        # Bật IPv4 (cần cho SMB qua IP)
+        _enable_ipv4()
+
         # Ngắt kết nối cũ (nếu có)
         subprocess.run(f'net use {SMB_DRIVE} /delete /y',
                        shell=True, capture_output=True, timeout=10)
@@ -517,14 +543,16 @@ def smb_connect():
             return True
         else:
             logging.error(f"SMB ket noi loi: {result.stderr.strip()}")
+            _disable_ipv4()
             return False
     except Exception as e:
         logging.error(f"SMB ket noi exception: {e}")
+        _disable_ipv4()
         return False
 
 
 def smb_disconnect():
-    """Ngắt SMB drive — nhường slot cho máy khác."""
+    """Ngắt SMB drive → tắt IPv4 — nhường slot cho máy khác."""
     if not SMB_SERVER:
         return
     try:
@@ -533,6 +561,8 @@ def smb_disconnect():
         logging.info(f"SMB ngat ket noi: {SMB_DRIVE}")
     except Exception:
         pass
+    # Tắt IPv4 sau khi ngắt SMB
+    _disable_ipv4()
 
 
 def has_required_files(dir_path: str) -> bool:
