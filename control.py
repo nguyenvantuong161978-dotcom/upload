@@ -267,10 +267,10 @@ class App:
             return
 
         smb_data = {
-            "SMB_SERVER": f"\\\\{ipv6}\\{s['SHARE_NAME']}",
             "SMB_USER": s["SMB_USER"],
             "SMB_PASS": s["SMB_PASS"],
             "SMB_DRIVE": s["SMB_DRIVE"],
+            "SHARE_NAME": s["SHARE_NAME"],
             "servers": [ipv6]
         }
 
