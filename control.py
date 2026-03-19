@@ -5,7 +5,7 @@ import os, json, time
 import tkinter as tk
 from datetime import datetime
 
-BASE_DIR = r"D:\AUTO"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 COMMANDS_DIR = os.path.join(BASE_DIR, "commands")
 STATUS_DIR = os.path.join(BASE_DIR, "status")
 os.makedirs(COMMANDS_DIR, exist_ok=True)

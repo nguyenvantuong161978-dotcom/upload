@@ -32,8 +32,8 @@ BROWSER_EXE = CFG.get("RUN_BROWSER_EXE", "")
 if not BROWSER_EXE:
     BROWSER_EXE = os.path.join(CHANNEL_DIR, CHANNEL_CODE, f"{CHANNEL_CODE}.exe")
 
-COMMANDS_DIR = r"\\tsclient\D\AUTO\commands"
-STATUS_DIR = r"\\tsclient\D\AUTO\status"
+COMMANDS_DIR = r"\\tsclient\D\upload\commands"
+STATUS_DIR = r"\\tsclient\D\upload\status"
 CHECK_INTERVAL = 30
 STATUS_INTERVAL = 60
 
