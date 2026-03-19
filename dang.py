@@ -652,11 +652,19 @@ def _copy_robocopy(src_dir, dst_dir, filename):
         '/MT:1',            # 1 thread (ổn định hơn qua mạng)
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)  # 2 tiếng cho file 10GB
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
         # Robocopy exit code: 0=no copy needed, 1=copied OK, >=8=error
+        if result.returncode >= 8:
+            logging.warning(f"  Robocopy loi (code {result.returncode}):")
+            if result.stdout.strip():
+                logging.warning(f"  STDOUT: {result.stdout.strip()[:500]}")
+            if result.stderr.strip():
+                logging.warning(f"  STDERR: {result.stderr.strip()[:500]}")
+        else:
+            logging.info(f"  Robocopy OK (code {result.returncode}): {filename}")
         return result.returncode < 8
     except Exception as e:
-        logging.warning(f"  Robocopy that bai: {e}")
+        logging.warning(f"  Robocopy exception: {e}")
         return False
 
 
