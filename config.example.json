@@ -4,6 +4,11 @@
     "LOCAL_DONE_ROOT": "C:\\Users\\Administrator\\Desktop\\done",
     "SERVER_DONE_ROOT": "Z:\\AUTO\\done",
 
+    "SMB_SERVER": "\\\\192.168.88.254\\D",
+    "SMB_USER": "smbuser",
+    "SMB_PASS": "159753",
+    "SMB_DRIVE": "Z:",
+
     "SPREADSHEET_NAME": "KA",
     "INPUT_SHEET": "INPUT",
     "SOURCE_SHEET": "NGUON",

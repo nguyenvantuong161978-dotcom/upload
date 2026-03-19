@@ -70,6 +70,12 @@ CHANNEL_CODE      = CFG.get("CHANNEL_CODE", _AUTO_CHANNEL)
 RUN_BROWSER_EXE   = CFG.get("RUN_BROWSER_EXE", os.path.join(_CHANNEL_DIR, f"{_AUTO_CHANNEL}.exe"))
 LOCAL_DONE_ROOT   = CFG.get("LOCAL_DONE_ROOT", os.path.join(_USER_HOME, "Desktop", "done"))
 SERVER_DONE_ROOT  = CFG.get("SERVER_DONE_ROOT", r"\\tsclient\D\AUTO\done")
+
+# SMB — kết nối khi copy, ngắt khi xong (nhường slot cho máy khác)
+SMB_SERVER = CFG.get("SMB_SERVER", "")          # \\192.168.88.254\D
+SMB_USER   = CFG.get("SMB_USER", "")            # smbuser
+SMB_PASS   = CFG.get("SMB_PASS", "")            # password
+SMB_DRIVE  = CFG.get("SMB_DRIVE", "Z:")
 UPLOAD_URL        = "https://www.youtube.com/upload"
 
 # Google Sheets — hỗ trợ cả tên field cũ và mới
@@ -494,6 +500,41 @@ def get_tomorrow_codes(rows):
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
+def smb_connect():
+    """Kết nối SMB drive. Ngắt cái cũ nếu đang dùng."""
+    if not SMB_SERVER:
+        return True  # không dùng SMB, dùng tsclient
+    try:
+        # Ngắt kết nối cũ (nếu có)
+        subprocess.run(f'net use {SMB_DRIVE} /delete /y',
+                       shell=True, capture_output=True, timeout=10)
+        time.sleep(2)
+        # Kết nối mới
+        cmd = f'net use {SMB_DRIVE} "{SMB_SERVER}" /user:{SMB_USER} {SMB_PASS} /persistent:no'
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
+        if result.returncode == 0:
+            logging.info(f"SMB ket noi OK: {SMB_DRIVE} -> {SMB_SERVER}")
+            return True
+        else:
+            logging.error(f"SMB ket noi loi: {result.stderr.strip()}")
+            return False
+    except Exception as e:
+        logging.error(f"SMB ket noi exception: {e}")
+        return False
+
+
+def smb_disconnect():
+    """Ngắt SMB drive — nhường slot cho máy khác."""
+    if not SMB_SERVER:
+        return
+    try:
+        subprocess.run(f'net use {SMB_DRIVE} /delete /y',
+                       shell=True, capture_output=True, timeout=10)
+        logging.info(f"SMB ngat ket noi: {SMB_DRIVE}")
+    except Exception:
+        pass
+
+
 def has_required_files(dir_path: str) -> bool:
     """Kiểm tra thư mục có đủ: >=1 mp4, >=1 srt, >=1 ảnh."""
     if not os.path.isdir(dir_path):
@@ -754,11 +795,24 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
 
 def ensure_local_folder(code):
     """Đảm bảo thư mục local có đủ file ĐÚNG dung lượng.
-    Copy TỪNG FILE, kiểm tra dung lượng, retry nếu lỗi."""
+    Copy TỪNG FILE, kiểm tra dung lượng, retry nếu lỗi.
+    SMB: kết nối trước, ngắt sau khi copy xong."""
     local_folder  = os.path.join(LOCAL_DONE_ROOT, code)
     server_folder = os.path.join(SERVER_DONE_ROOT, code)
 
     local_enough  = os.path.isdir(local_folder) and has_required_files(local_folder)
+
+    # Kết nối SMB để kiểm tra server
+    smb_connect()
+
+    try:
+        return _do_ensure_local(code, local_folder, server_folder, local_enough)
+    finally:
+        smb_disconnect()
+
+
+def _do_ensure_local(code, local_folder, server_folder, local_enough):
+    """Logic copy thực tế. SMB đã kết nối, sẽ ngắt ở ensure_local_folder."""
     server_enough = has_required_files(server_folder)
 
     # Trường hợp 1: Local đã có file — kiểm tra từng file khớp server
@@ -769,7 +823,6 @@ def ensure_local_folder(code):
                 return True
             else:
                 logging.info(f"Local co file bi loi/thieu -> copy lai tu server.")
-                # Tiếp tục xuống phần copy bên dưới
         else:
             logging.info(f"Local da du bo; server khong san. Giu nguyen: {local_folder}")
             return True
