@@ -91,37 +91,47 @@ def kill_dang_and_browser():
     logging.info("Kill dang.py + browser...")
     my_pid = os.getpid()
 
-    # 1) Kill cmd + python theo window title (ca tree, ke ca "Administrator: ...")
-    for title in ["Dang Video", "Administrator: Dang Video",
-                   "Administrator:  Dang Video",
-                   "Tra loi binh luan", "Administrator: Tra loi binh luan"]:
-        subprocess.run(
-            f'taskkill /F /FI "WINDOWTITLE eq {title}" /T',
-            shell=True, capture_output=True, timeout=10
+    # Tim tat ca PID cua python.exe tru watchdog
+    try:
+        result = subprocess.run(
+            f'wmic process where "name=\'python.exe\'" get processid /value',
+            shell=True, capture_output=True, text=True, timeout=10
         )
-    # Wildcard: bat ky cua so nao co "Dang Video" trong title
-    subprocess.run(
-        'powershell -Command "Get-Process | Where-Object { $_.MainWindowTitle -like \'*Dang Video*\' } | Stop-Process -Force -ErrorAction SilentlyContinue"',
-        shell=True, capture_output=True, timeout=15
-    )
-    time.sleep(1)
+        for line in result.stdout.strip().split('\n'):
+            line = line.strip()
+            if line.startswith('ProcessId='):
+                pid = int(line.split('=')[1])
+                if pid != my_pid:
+                    logging.info(f"  Kill python PID={pid}")
+                    subprocess.run(f'taskkill /F /PID {pid} /T', shell=True, capture_output=True, timeout=5)
+    except Exception as e:
+        logging.warning(f"  Kill python loi: {e}")
 
-    # 2) Kill tat ca python.exe tru watchdog
-    subprocess.run(
-        f'powershell -Command "'
-        f'Get-WmiObject Win32_Process -Filter \\"Name=\'python.exe\'\\" | '
-        f'Where-Object {{ $_.ProcessId -ne {my_pid} }} | '
-        f'ForEach-Object {{ $_.Terminate() }}'
-        f'"',
-        shell=True, capture_output=True, timeout=15
-    )
-    time.sleep(1)
+    time.sleep(2)
 
-    # 3) Backup: taskkill tat ca python tru PID cua minh
-    subprocess.run(
-        f'wmic process where "name=\'python.exe\' and processid != {my_pid}" call terminate',
-        shell=True, capture_output=True, timeout=15
-    )
+    # Kill cmd.exe co "dang" trong command line
+    try:
+        result = subprocess.run(
+            'wmic process where "name=\'cmd.exe\'" get processid,commandline /value',
+            shell=True, capture_output=True, text=True, timeout=10
+        )
+        current_block_pid = None
+        has_dang = False
+        for line in result.stdout.split('\n'):
+            line = line.strip()
+            if line.startswith('CommandLine='):
+                has_dang = 'dang' in line.lower() or 'Dang Video' in line
+            elif line.startswith('ProcessId='):
+                current_block_pid = int(line.split('=')[1])
+                if has_dang and current_block_pid != my_pid:
+                    logging.info(f"  Kill cmd PID={current_block_pid}")
+                    subprocess.run(f'taskkill /F /PID {current_block_pid} /T',
+                                   shell=True, capture_output=True, timeout=5)
+                has_dang = False
+                current_block_pid = None
+    except Exception as e:
+        logging.warning(f"  Kill cmd loi: {e}")
+
     time.sleep(1)
 
     # Kill browser
