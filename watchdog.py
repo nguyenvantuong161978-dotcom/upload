@@ -247,6 +247,12 @@ def do_smb_setup(signal_path):
         logging.info(f"Da cap nhat config.json: SMB={smb_server}, DRIVE={smb_drive}")
         logging.info(f"SERVER_DONE_ROOT={cfg['SERVER_DONE_ROOT']}")
 
+        # Restart dang.py de doc lai config moi
+        logging.info("Restart dang.py de ap dung config SMB moi...")
+        kill_dang_and_browser()
+        time.sleep(3)
+        start_all_scripts()
+
     except Exception as e:
         logging.error(f"smb_setup loi: {e}")
 
