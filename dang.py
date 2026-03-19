@@ -783,8 +783,10 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
 
             # === COPY ===
             ok = False
-            if is_large:
-                # File lớn + ổ mạng thường: dùng robocopy
+            is_tsclient = src.startswith(r"\\tsclient")
+
+            if is_large and not is_tsclient:
+                # SMB: ưu tiên robocopy /Z (resume khi đứt)
                 logging.info(f"  [{attempt}/{max_retries}] Thu robocopy: {src_name}")
                 ok = _copy_robocopy(src_dir, dst_dir, src_name)
                 if ok and os.path.exists(dst):
@@ -795,12 +797,19 @@ def copy_single_file(src, dst, max_retries=COPY_MAX_RETRIES):
                                         f"(dst={dst_size:,}, src={src_size:,})")
 
             if not ok:
-                # Robocopy fail → chờ 30s cho nhả file trước khi chunked copy
-                if is_large:
-                    logging.info(f"  Robocopy khong duoc -> cho 30s roi thu chunked copy")
-                    time.sleep(30)
+                # tsclient hoặc robocopy fail → chunked copy
+                if is_large and not is_tsclient:
+                    logging.info(f"  Robocopy khong duoc -> cho 15s roi thu chunked copy")
+                    time.sleep(15)
                 logging.info(f"  [{attempt}/{max_retries}] Chunked copy: {src_name}")
                 ok = _copy_chunked(src, dst, src_size)
+
+            # Nếu chunked cũng fail + đang dùng SMB → thử reconnect
+            if not ok and not is_tsclient and SMB_SERVER:
+                logging.warning(f"  Copy fail, thu reconnect SMB...")
+                smb_disconnect()
+                time.sleep(5)
+                smb_connect()
 
             # === KIỂM TRA ===
             if ok:
