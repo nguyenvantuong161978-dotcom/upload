@@ -1627,6 +1627,13 @@ def handle_step3_4_flow(active_row, client, code):
     paste_text(time_val or "")
     pyautogui.press('enter'); rsleep("small")
 
+    # === KIỂM TRA LỖI VIDEO TRƯỚC KHI LÊN LỊCH ===
+    logging.info("Kiem tra loi video truoc khi len lich (loi.png)...")
+    pos_loi = wait_image(TEMPLATE_LOI, timeout_sec=5, confidence=0.70)
+    if pos_loi:
+        logging.error("PHAT HIEN LOI VIDEO truoc khi len lich! Ma %s bi hong.", code)
+        return "VIDEO_ERROR"
+
     # === Click LÊN LỊCH ===
     logging.info("Tim va click 'lenlich.png' de xac nhan hen lich...")
     pos_publish = wait_image(TEMPLATE_SCHEDULE_PUBLISH, timeout_sec=CLICK_TIMEOUT_SEC)
@@ -1636,15 +1643,24 @@ def handle_step3_4_flow(active_row, client, code):
 
     move_click(pos_publish.x, pos_publish.y, img_size=_img_size(pos_publish)); rsleep("medium")
 
-    # === KIỂM TRA: đôi khi cần click "kiemtra.png" để hoàn thành ===
+    # === KIỂM TRA: click "kiemtra.png" nếu có, retry 3 lần ===
     logging.info("Kiem tra xem co 'kiemtra.png' khong...")
-    pos_kt = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=10, confidence=0.75)
-    if pos_kt:
-        logging.info("Thay 'kiemtra.png' -> click de hoan thanh dang.")
-        move_click(pos_kt.x, pos_kt.y, img_size=_img_size(pos_kt))
-        rsleep("medium")
-    else:
-        logging.info("Khong thay 'kiemtra.png' -> khong can, tiep tuc.")
+    for kt_attempt in range(1, 4):
+        pos_kt = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=5, confidence=0.75)
+        if pos_kt:
+            logging.info(f"Thay 'kiemtra.png' (lan {kt_attempt}) -> click...")
+            move_click(pos_kt.x, pos_kt.y, img_size=_img_size(pos_kt))
+            time.sleep(4)
+            # Kiểm tra đã mất chưa
+            still_there = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=3, confidence=0.75)
+            if not still_there:
+                logging.info("kiemtra.png da mat -> OK.")
+                break
+            else:
+                logging.warning(f"kiemtra.png van con sau click (lan {kt_attempt}/3)")
+        else:
+            logging.info("Khong thay 'kiemtra.png' -> khong can, tiep tuc.")
+            break
 
     # === CẬP NHẬT TRẠNG THÁI ===
     try:
@@ -1948,6 +1964,31 @@ def main():
             rsleep("long")
 
         ok = handle_step3_4_flow(active_row, client, code)  # Bước 3-4
+
+        if ok == "VIDEO_ERROR":
+            logging.error(f"Video loi truoc khi len lich! Xoa va copy lai ma {code}.")
+            retries = error_retry_count.get(code, 0)
+            if retries >= 2:
+                logging.error(f"Ma {code} da loi {retries} lan -> BO QUA.")
+                continue
+            error_retry_count[code] = retries + 1
+            close_browsers_gently_in_rdp()
+            rsleep("small")
+            local_folder_err = os.path.join(LOCAL_DONE_ROOT, code)
+            try:
+                if os.path.isdir(local_folder_err):
+                    shutil.rmtree(local_folder_err, ignore_errors=True)
+                    logging.info(f"Da xoa local loi: {local_folder_err}")
+            except Exception:
+                pass
+            copy_ok = ensure_local_folder(code)
+            if copy_ok:
+                ready_codes.append(code)
+                logging.info(f"Da them lai ma {code} de thu lai.")
+            open_run_and_execute(RUN_BROWSER_EXE)
+            time.sleep(BROWSER_LAUNCH_WAIT_SEC)
+            first_time = True
+            continue
 
         if not ok:
             logging.error("Dang/len lich khong xac nhan duoc => bo qua.")
