@@ -325,10 +325,26 @@ def do_install_ffprobe(signal_path):
                 logging.warning(f"  Khong tim thay {src}")
                 continue
 
-            logging.info(f"  Copy {fname} ({os.path.getsize(src) / (1024*1024):.0f} MB)...")
-            import shutil
-            shutil.copy2(src, dst)
-            logging.info(f"  {fname} OK.")
+            src_size = os.path.getsize(src)
+            logging.info(f"  Copy {fname} ({src_size / (1024*1024):.0f} MB)...")
+
+            # Chunked copy 4MB — tsclient khong chiu file lon
+            CHUNK = 4 * 1024 * 1024
+            copied = 0
+            with open(dst, 'wb') as fdst:
+                with open(src, 'rb') as fsrc:
+                    while True:
+                        chunk = fsrc.read(CHUNK)
+                        if not chunk:
+                            break
+                        fdst.write(chunk)
+                        copied += len(chunk)
+                fdst.flush()
+
+            if os.path.getsize(dst) == src_size:
+                logging.info(f"  {fname} OK ({src_size / (1024*1024):.0f} MB)")
+            else:
+                logging.warning(f"  {fname} size khong khop!")
 
         # Them vao PATH (cho phien hien tai va cac phien sau)
         ffprobe_path = dst_dir
