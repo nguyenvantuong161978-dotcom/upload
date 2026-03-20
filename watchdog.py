@@ -407,11 +407,19 @@ def do_update(signal_path):
 
     delete_signal(signal_path)
     time.sleep(3)
-    start_all_scripts()
-    time.sleep(8)
-    state = "running"
-    write_status()
-    logging.info("Da update + run xong.")
+
+    # Restart TOÀN BỘ (watchdog mới + dang.py) qua run.bat
+    # Watchdog cũ phải thoát để watchdog mới chạy
+    RUN_BAT = os.path.join(BASE_DIR, "run.bat")
+    logging.info("Khoi dong run.bat (watchdog moi + dang.py)...")
+    subprocess.Popen(
+        f'cmd /c start "" "{RUN_BAT}"',
+        shell=True, cwd=BASE_DIR,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+    )
+    logging.info("Da update. Thoat watchdog cu de watchdog moi chay.")
+    time.sleep(2)
+    sys.exit(0)
 
 
 
