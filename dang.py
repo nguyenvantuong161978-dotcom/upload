@@ -1613,8 +1613,34 @@ def handle_step3_4_flow(active_row, client, code):
     paste_text(date_val or "")
     pyautogui.press('enter'); rsleep("small")
 
-    # === Dán GIỜ (BJ) ===
+    # === Dán GIỜ (BJ) — kiểm tra quá giờ ===
     time_val = norm(active_row[IDX_TIME_BJ]) if len(active_row) > IDX_TIME_BJ else ""
+    # Check: nếu giờ hẹn đã qua → đổi thành giờ hiện tại + 10 phút
+    try:
+        from datetime import timezone
+        now_vn = datetime.now()  # máy đặt múi giờ VN
+        scheduled_time = _parse_time(time_val or "")
+        scheduled_date = _parse_date(date_val or "")
+        if scheduled_time and scheduled_date:
+            scheduled_dt = datetime.combine(scheduled_date, scheduled_time)
+            if scheduled_dt <= now_vn:
+                new_dt = now_vn + timedelta(minutes=10)
+                time_val = new_dt.strftime("%H:%M")
+                logging.warning("Gio hen %s da qua! Doi thanh %s (+10 phut).",
+                                active_row[IDX_TIME_BJ], time_val)
+                # Nếu ngày cũng đã qua, cập nhật ngày
+                if scheduled_date < now_vn.date():
+                    date_val = new_dt.strftime("%d/%m/%Y")
+                    logging.warning("Ngay hen cung da qua! Doi thanh %s.", date_val)
+                    # Dán lại ngày mới
+                    pos_time_tmp = wait_image(TEMPLATE_TIME, timeout_sec=5)
+                    if pos_time_tmp:
+                        press_key('shift+tab', 1, "tiny")
+                        pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
+                        paste_text(date_val)
+                        pyautogui.press('enter'); rsleep("small")
+    except Exception as e:
+        logging.warning("Loi khi check gio hen: %s (van dung gio goc)", e)
     logging.info("Dan GIO (BJ): %s", time_val or "(rong)")
 
     pos_time = wait_image(TEMPLATE_TIME, timeout_sec=CLICK_TIMEOUT_SEC)
