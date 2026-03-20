@@ -650,9 +650,15 @@ def verify_mp4_readable(file_path):
         return False
 
     # === Cách 1: ffprobe (chính xác nhất) ===
+    # Tìm ffprobe: trong upload/ffmpeg/bin/ hoặc system PATH
+    _ffprobe = 'ffprobe'
+    _local_ffprobe = os.path.join(BASE_DIR, "ffmpeg", "bin", "ffprobe.exe")
+    if os.path.isfile(_local_ffprobe):
+        _ffprobe = _local_ffprobe
+
     try:
         result = subprocess.run([
-            'ffprobe', '-v', 'error',
+            _ffprobe, '-v', 'error',
             '-select_streams', 'v:0',
             '-show_entries', 'format=duration',
             '-of', 'csv=p=0',

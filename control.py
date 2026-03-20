@@ -181,6 +181,9 @@ class App:
         tk.Button(btn_frame, text="GUI CONFIG", bg="#a6e3a1", fg="#1e1e2e",
                   font=("Segoe UI", 10, "bold"), width=12, relief="flat",
                   command=lambda: self.send_smb_to_vms(win)).pack(side="left", padx=3)
+        tk.Button(btn_frame, text="CAI FFPROBE", bg="#cba6f7", fg="#1e1e2e",
+                  font=("Segoe UI", 10, "bold"), width=12, relief="flat",
+                  command=lambda: self.install_ffprobe_all(win)).pack(side="left", padx=3)
         tk.Button(btn_frame, text="DONG", bg="#585b70", fg="#cdd6f4",
                   font=("Segoe UI", 10, "bold"), width=8, relief="flat",
                   command=win.destroy).pack(side="right", padx=3)
@@ -214,6 +217,12 @@ class App:
         for r in results:
             self.setting_log_msg(r)
         self.setting_log_msg("HOAN TAT!")
+
+    def install_ffprobe_all(self, win):
+        """Gui lenh install_ffprobe toi tat ca VM."""
+        self.send("ALL", "install_ffprobe")
+        self.setting_log_msg("Da gui lenh cai ffprobe toi tat ca VM.")
+        self.setting_log_msg("VM se copy ffprobe.exe tu \\\\tsclient\\D\\upload\\ffmpeg\\bin\\")
 
     def send_smb_to_vms(self, win):
         """Gui config SMB rieng cho tung VM theo protocol da chon."""

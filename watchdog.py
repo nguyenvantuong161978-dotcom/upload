@@ -56,7 +56,7 @@ start_time = time.time()
 state = "idle"
 last_error = ""
 
-SUPPORTED_CMDS = ["run", "stop", "update", "smb_setup"]
+SUPPORTED_CMDS = ["run", "stop", "update", "smb_setup", "install_ffprobe"]
 
 logging.info(f"Watchdog khoi dong: CHANNEL={CHANNEL_CODE}, VERSION={VERSION}")
 logging.info(f"Theo doi: {COMMANDS_DIR}")
@@ -299,6 +299,54 @@ def do_smb_setup(signal_path):
     delete_signal(signal_path)
 
 
+def do_install_ffprobe(signal_path):
+    """Copy ffprobe.exe tu may chu (qua tsclient) vao thu muc upload."""
+    logging.info("=== INSTALL FFPROBE ===")
+    delete_signal(signal_path)
+
+    src_dir = r"\\tsclient\D\upload\ffmpeg\bin"
+    dst_dir = os.path.join(BASE_DIR, "ffmpeg", "bin")
+
+    try:
+        os.makedirs(dst_dir, exist_ok=True)
+
+        for fname in ["ffprobe.exe", "ffmpeg.exe"]:
+            src = os.path.join(src_dir, fname)
+            dst = os.path.join(dst_dir, fname)
+
+            if os.path.isfile(dst):
+                src_size = os.path.getsize(src) if os.path.isfile(src) else 0
+                dst_size = os.path.getsize(dst)
+                if src_size == dst_size:
+                    logging.info(f"  {fname} da co va dung size, bo qua.")
+                    continue
+
+            if not os.path.isfile(src):
+                logging.warning(f"  Khong tim thay {src}")
+                continue
+
+            logging.info(f"  Copy {fname} ({os.path.getsize(src) / (1024*1024):.0f} MB)...")
+            import shutil
+            shutil.copy2(src, dst)
+            logging.info(f"  {fname} OK.")
+
+        # Them vao PATH (cho phien hien tai va cac phien sau)
+        ffprobe_path = dst_dir
+        current_path = os.environ.get("PATH", "")
+        if ffprobe_path.lower() not in current_path.lower():
+            # Them vao system PATH vinh vien
+            subprocess.run(
+                f'setx PATH "%PATH%;{ffprobe_path}" /M',
+                shell=True, capture_output=True, timeout=10
+            )
+            logging.info(f"  Da them vao PATH: {ffprobe_path}")
+
+        logging.info("INSTALL FFPROBE HOAN TAT.")
+
+    except Exception as e:
+        logging.error(f"  Install ffprobe loi: {e}")
+
+
 def do_run(signal_path):
     """Chay run.bat (khoi dong tat ca: dang.py, cmt.py...)."""
     global state
@@ -396,6 +444,8 @@ def main():
                     do_update(fpath)
                 elif cmd == "smb_setup":
                     do_smb_setup(fpath)
+                elif cmd == "install_ffprobe":
+                    do_install_ffprobe(fpath)
 
             # 2) Tu dong cap nhat state
             if state not in ("stopped", "killed", "stopping", "starting",
