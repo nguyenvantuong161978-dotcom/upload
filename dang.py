@@ -639,34 +639,74 @@ def verify_local_matches_server(local_folder: str, server_folder: str) -> bool:
 
 
 def verify_mp4_readable(file_path):
-    """Kiểm tra file mp4 có đọc được không.
-    Đọc header (8 bytes đầu) + đọc 1 chunk cuối file.
-    File bị cắt cụt sẽ thiếu dữ liệu cuối."""
+    """Kiểm tra file mp4 có chạy được không.
+    1) ffprobe (nếu có): kiểm tra duration > 0 → chắc chắn nhất
+    2) Fallback: đọc header + 5 điểm giữa + tail → phát hiện file cắt cụt"""
+    size = os.path.getsize(file_path)
+    name = os.path.basename(file_path)
+
+    if size < 1024:
+        logging.warning(f"  MP4 qua nho ({size} bytes): {name}")
+        return False
+
+    # === Cách 1: ffprobe (chính xác nhất) ===
     try:
-        size = os.path.getsize(file_path)
-        if size < 8:
-            logging.warning(f"  MP4 qua nho ({size} bytes): {file_path}")
+        result = subprocess.run([
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'format=duration',
+            '-of', 'csv=p=0',
+            file_path
+        ], capture_output=True, text=True, timeout=120)
+
+        if result.returncode == 0 and result.stdout.strip():
+            duration = float(result.stdout.strip())
+            if duration > 0:
+                logging.info(f"  MP4 OK (ffprobe): {name} ({size / (1024**3):.2f} GB, {duration:.0f}s)")
+                return True
+            else:
+                logging.warning(f"  MP4 LOI: ffprobe duration=0: {name}")
+                return False
+        else:
+            logging.warning(f"  MP4 LOI: ffprobe loi: {result.stderr.strip()[:200]}")
             return False
 
+    except FileNotFoundError:
+        logging.info("  ffprobe khong co, dung fallback...")
+    except subprocess.TimeoutExpired:
+        logging.warning("  ffprobe timeout 120s, dung fallback...")
+    except Exception as e:
+        logging.warning(f"  ffprobe exception: {e}, dung fallback...")
+
+    # === Cách 2: Fallback — đọc header + 5 điểm giữa + tail ===
+    try:
         with open(file_path, 'rb') as f:
-            # Đọc 8 bytes đầu — mp4 header thường là ftyp
+            # Header
             header = f.read(8)
             if b'ftyp' not in header and b'moov' not in header and b'mdat' not in header:
-                logging.warning(f"  MP4 header khong hop le: {file_path}")
+                logging.warning(f"  MP4 header khong hop le: {name}")
                 return False
 
-            # Đọc 1MB cuối file — nếu file bị cắt cụt sẽ lỗi hoặc thiếu
-            read_pos = max(0, size - 1024 * 1024)
-            f.seek(read_pos)
+            # Đọc 5 điểm giữa file (10%, 30%, 50%, 70%, 90%)
+            for pct in [10, 30, 50, 70, 90]:
+                pos = int(size * pct / 100)
+                f.seek(pos)
+                chunk = f.read(64 * 1024)  # đọc 64KB
+                if len(chunk) < 64 * 1024 and pos + 64 * 1024 < size:
+                    logging.warning(f"  MP4 khong doc duoc tai {pct}%%: {name}")
+                    return False
+
+            # Tail
+            f.seek(max(0, size - 1024 * 1024))
             tail = f.read()
-            if len(tail) < min(1024 * 1024, size - read_pos):
-                logging.warning(f"  MP4 khong doc duoc cuoi file: {file_path}")
+            if len(tail) < min(1024 * 1024, size):
+                logging.warning(f"  MP4 khong doc duoc cuoi file: {name}")
                 return False
 
-        logging.info(f"  MP4 OK: {os.path.basename(file_path)} ({size / (1024**3):.2f} GB)")
+        logging.info(f"  MP4 OK (fallback): {name} ({size / (1024**3):.2f} GB)")
         return True
     except Exception as e:
-        logging.warning(f"  MP4 loi doc: {file_path}: {e}")
+        logging.warning(f"  MP4 loi doc: {name}: {e}")
         return False
 
 
@@ -925,15 +965,34 @@ def _do_ensure_local(code, local_folder, server_folder, local_enough):
         logging.error(f"Sau copy, van co file khong khop: {local_folder}")
         return False
 
-    # Kiểm tra mp4 có đọc được không
+    # Kiểm tra mp4 có chạy được không — nếu lỗi → xóa + copy lại
     for name in os.listdir(local_folder):
         if name.lower().endswith(".mp4"):
             mp4_path = os.path.join(local_folder, name)
             if not verify_mp4_readable(mp4_path):
-                logging.error(f"MP4 bi loi sau copy: {mp4_path}")
-                return False
+                logging.warning(f"MP4 bi loi! Xoa va copy lai: {name}")
+                try:
+                    os.remove(mp4_path)
+                except Exception:
+                    pass
+                # Copy lại mp4 từ server
+                src_mp4 = os.path.join(server_folder, name)
+                if os.path.isfile(src_mp4):
+                    if copy_single_file(src_mp4, mp4_path, max_retries=3):
+                        # Kiểm tra lại sau khi copy lại
+                        if verify_mp4_readable(mp4_path):
+                            logging.info(f"MP4 copy lai OK: {name}")
+                        else:
+                            logging.error(f"MP4 van loi sau khi copy lai: {name}")
+                            return False
+                    else:
+                        logging.error(f"Khong the copy lai MP4: {name}")
+                        return False
+                else:
+                    logging.error(f"Khong tim thay MP4 tren server: {src_mp4}")
+                    return False
 
-    logging.info(f"Copy hoan tat va xac nhan khop 100%%: {local_folder}")
+    logging.info(f"Copy hoan tat va MP4 da kiem tra OK: {local_folder}")
     return True
 
 
