@@ -1669,26 +1669,24 @@ def handle_step3_4_flow(active_row, client, code):
 
     move_click(pos_publish.x, pos_publish.y, img_size=_img_size(pos_publish)); rsleep("medium")
 
-    # === KIỂM TRA: click "kiemtra.png" nếu có, retry 5 lần ===
+    # === KIỂM TRA: click "kiemtra.png" cho tới khi mất (tối đa 60s) ===
     logging.info("Cho kiemtra.png (nut 'Da hieu') sau khi len lich...")
-    # Chờ tới 30s cho nút xuất hiện
     pos_kt = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=30, confidence=0.70)
     if pos_kt:
-        for kt_attempt in range(1, 6):
-            logging.info(f"Thay 'kiemtra.png' (lan {kt_attempt}/5) -> click...")
+        kt_start = time.time()
+        kt_count = 0
+        while time.time() - kt_start < 60:
+            kt_count += 1
+            logging.info(f"Thay 'kiemtra.png' (lan {kt_count}) -> click...")
             move_click(pos_kt.x, pos_kt.y, img_size=_img_size(pos_kt))
-            time.sleep(5)
-            # Kiểm tra đã mất chưa
+            time.sleep(3)
             still_there = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=5, confidence=0.70)
             if not still_there:
-                logging.info("kiemtra.png da mat -> click thanh cong!")
+                logging.info(f"kiemtra.png da mat sau {kt_count} lan click -> OK!")
                 break
-            else:
-                logging.warning(f"kiemtra.png VAN CON sau click (lan {kt_attempt}/5)")
-                # Thử click lại vị trí mới (ảnh có thể dịch chuyển)
-                pos_kt = still_there
+            pos_kt = still_there  # cập nhật vị trí mới
         else:
-            logging.error("kiemtra.png van con sau 5 lan click! Tiep tuc anyway.")
+            logging.error("kiemtra.png van con sau 60s! Tiep tuc anyway.")
     else:
         logging.info("Khong thay 'kiemtra.png' -> khong can click.")
 
