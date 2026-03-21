@@ -1669,24 +1669,28 @@ def handle_step3_4_flow(active_row, client, code):
 
     move_click(pos_publish.x, pos_publish.y, img_size=_img_size(pos_publish)); rsleep("medium")
 
-    # === KIỂM TRA: click "kiemtra.png" nếu có, retry 3 lần ===
-    logging.info("Kiem tra xem co 'kiemtra.png' khong...")
-    for kt_attempt in range(1, 4):
-        pos_kt = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=5, confidence=0.75)
-        if pos_kt:
-            logging.info(f"Thay 'kiemtra.png' (lan {kt_attempt}) -> click...")
+    # === KIỂM TRA: click "kiemtra.png" nếu có, retry 5 lần ===
+    logging.info("Cho kiemtra.png (nut 'Da hieu') sau khi len lich...")
+    # Chờ tới 30s cho nút xuất hiện
+    pos_kt = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=30, confidence=0.70)
+    if pos_kt:
+        for kt_attempt in range(1, 6):
+            logging.info(f"Thay 'kiemtra.png' (lan {kt_attempt}/5) -> click...")
             move_click(pos_kt.x, pos_kt.y, img_size=_img_size(pos_kt))
-            time.sleep(4)
+            time.sleep(5)
             # Kiểm tra đã mất chưa
-            still_there = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=3, confidence=0.75)
+            still_there = wait_image(TEMPLATE_KIEM_TRA, timeout_sec=5, confidence=0.70)
             if not still_there:
-                logging.info("kiemtra.png da mat -> OK.")
+                logging.info("kiemtra.png da mat -> click thanh cong!")
                 break
             else:
-                logging.warning(f"kiemtra.png van con sau click (lan {kt_attempt}/3)")
+                logging.warning(f"kiemtra.png VAN CON sau click (lan {kt_attempt}/5)")
+                # Thử click lại vị trí mới (ảnh có thể dịch chuyển)
+                pos_kt = still_there
         else:
-            logging.info("Khong thay 'kiemtra.png' -> khong can, tiep tuc.")
-            break
+            logging.error("kiemtra.png van con sau 5 lan click! Tiep tuc anyway.")
+    else:
+        logging.info("Khong thay 'kiemtra.png' -> khong can click.")
 
     # === CẬP NHẬT TRẠNG THÁI ===
     try:
