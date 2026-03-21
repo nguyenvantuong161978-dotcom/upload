@@ -1731,17 +1731,33 @@ def pre_stage_tomorrow(input_rows):
 
 
 def wait_for_internet(max_wait=1800):
-    """Chờ có mạng trước khi bắt đầu. Thử mỗi 30s, tối đa 30 phút."""
+    """Chờ có mạng trước khi bắt đầu. Thử IPv6 trước, nếu fail thì bật IPv4."""
     import socket
+    hosts = [
+        ("oauth2.googleapis.com", 443),
+        ("sheets.googleapis.com", 443),
+        ("www.google.com", 443),
+    ]
     start = time.time()
+    ipv4_enabled = False
     while time.time() - start < max_wait:
-        try:
-            socket.create_connection(("oauth2.googleapis.com", 443), timeout=10).close()
-            return True
-        except Exception:
-            remaining = int(max_wait - (time.time() - start))
-            logging.warning(f"Khong co mang. Thu lai sau 30s... (con {remaining}s)")
-            time.sleep(30)
+        # Thử kết nối qua IPv6 hoặc IPv4
+        for host, port in hosts:
+            try:
+                socket.create_connection((host, port), timeout=10).close()
+                return True
+            except Exception:
+                pass
+        # Nếu tất cả fail và chưa bật IPv4, thử bật IPv4
+        if not ipv4_enabled:
+            logging.info("IPv6 khong ket noi duoc -> bat IPv4 de kiem tra mang...")
+            _enable_ipv4()
+            ipv4_enabled = True
+            time.sleep(10)  # chờ IPv4 ổn định
+            continue
+        remaining = int(max_wait - (time.time() - start))
+        logging.warning(f"Khong co mang. Thu lai sau 30s... (con {remaining}s)")
+        time.sleep(30)
     logging.error("Het %d phut van khong co mang.", max_wait // 60)
     return False
 
