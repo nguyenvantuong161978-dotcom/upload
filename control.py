@@ -84,24 +84,32 @@ def ipv6_to_literal(ipv6):
 
 
 class App:
-    def __init__(self):
+    def __init__(self, root=None, parent=None):
         self.settings = load_settings()
-        self.root = tk.Tk()
-        self.root.title(f"DIEU KHIEN MAY AO  v{CURRENT_VERSION}")
-        self.root.configure(bg="#1e1e2e")
-        self.root.resizable(True, True)
+
+        if root is None:
+            self.root = tk.Tk()
+            self.root.title(f"DIEU KHIEN MAY AO  v{CURRENT_VERSION}")
+            self.root.configure(bg="#1e1e2e")
+            self.root.resizable(True, True)
+            self._standalone = True
+        else:
+            self.root = root
+            self._standalone = False
+
+        self.parent = parent if parent else self.root
 
         # Title + Setting
-        title_frame = tk.Frame(self.root, bg="#1e1e2e")
+        title_frame = tk.Frame(self.parent, bg="#1e1e2e")
         title_frame.pack(fill="x", padx=10, pady=(10, 0))
-        tk.Label(title_frame, text=f"DIEU KHIEN MAY AO  v{CURRENT_VERSION}",
+        tk.Label(title_frame, text=f"DIEU KHIEN MAY AO UPLOAD  v{CURRENT_VERSION}",
                  font=("Segoe UI", 14, "bold"), fg="#cdd6f4", bg="#1e1e2e").pack(side="left")
         tk.Button(title_frame, text="SETTING", bg="#585b70", fg="#cdd6f4",
                   font=("Segoe UI", 9, "bold"), width=8, relief="flat",
                   command=self.open_settings).pack(side="right")
 
         # ALL buttons
-        top = tk.Frame(self.root, bg="#1e1e2e")
+        top = tk.Frame(self.parent, bg="#1e1e2e")
         top.pack(fill="x", padx=10, pady=5)
         for txt, cmd, color in [("RUN ALL", "run", "#a6e3a1"),
                                  ("STOP ALL", "stop", "#f38ba8"),
@@ -111,16 +119,17 @@ class App:
                       command=lambda c=cmd: self.send("ALL", c)).pack(side="left", padx=3)
 
         # VM list
-        self.container = tk.Frame(self.root, bg="#1e1e2e")
+        self.container = tk.Frame(self.parent, bg="#1e1e2e")
         self.container.pack(fill="both", expand=True, padx=10, pady=5)
 
         # Status bar
-        self.status_lbl = tk.Label(self.root, text="", font=("Consolas", 9),
+        self.status_lbl = tk.Label(self.parent, text="", font=("Consolas", 9),
                                     fg="#a6adc8", bg="#1e1e2e", anchor="w")
         self.status_lbl.pack(fill="x", padx=10, pady=(0, 5))
 
         self.refresh()
-        self.root.mainloop()
+        if self._standalone:
+            self.root.mainloop()
 
     # ─── SETTINGS ───
     def open_settings(self):
@@ -340,9 +349,10 @@ class App:
             for vm in vms:
                 self.draw_vm(vm)
 
-        count = max(len(vms), 1)
-        h = 150 + count * 45
-        self.root.geometry(f"780x{min(h, 800)}")
+        if self._standalone:
+            count = max(len(vms), 1)
+            h = 150 + count * 45
+            self.root.geometry(f"780x{min(h, 800)}")
         self.root.after(5000, self.refresh)
 
     def toggle_protocol(self, channel):
