@@ -550,11 +550,15 @@ def smb_connect():
             logging.info(f"SMB ket noi OK: {SMB_DRIVE} -> {SMB_SERVER}")
             return True
         else:
-            logging.warning(f"SMB that bai -> fallback ve tsclient")
-            return _fallback_tsclient()
+            logging.error(f"SMB that bai sau 3 lan! Khong dung tsclient.")
+            if NEED_IPV4_TOGGLE:
+                _disable_ipv4()
+            return False
     except Exception as e:
-        logging.warning(f"SMB exception: {e} -> fallback ve tsclient")
-        return _fallback_tsclient()
+        logging.error(f"SMB exception: {e}")
+        if NEED_IPV4_TOGGLE:
+            _disable_ipv4()
+        return False
 
 
 def _fallback_tsclient():
