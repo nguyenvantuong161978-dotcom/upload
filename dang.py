@@ -1802,20 +1802,28 @@ def main():
         logging.error("Khong co mang -> bo qua phien nay.")
         return
 
-    try:
-        cleanup_posted_codes()
-    except Exception as e:
-        logging.warning(f"cleanup_posted_codes loi (khong anh huong): {e}")
+    # Dọn mã đã đăng — timeout 60s, không chặn tool
+    import threading
+    logging.info("[1/5] Dọn mã đã đăng (tối đa 60s)...")
+    cleanup_thread = threading.Thread(target=cleanup_posted_codes, daemon=True)
+    cleanup_thread.start()
+    cleanup_thread.join(timeout=60)
+    if cleanup_thread.is_alive():
+        logging.warning("[1/5] TREO: cleanup qua 60s! Co the mat mang -> bo qua, tiep tuc.")
+    else:
+        logging.info("[1/5] Dọn mã xong.")
 
     BROWSER_LAUNCH_WAIT_SEC = int(r(*HUMAN.browser_wait))
     CLICK_TIMEOUT_SEC       = int(r(*HUMAN.click_timeout))
     CLICK_CONFIDENCE        = r(*HUMAN.click_confidence)
 
+    logging.info("[2/5] Ket noi Google Sheets...")
     client     = gs_client()
     input_rows = get_rows(client, INPUT_SHEET)
+    logging.info(f"[2/5] Da doc {len(input_rows)} dong tu sheet '{INPUT_SHEET}'.")
 
     # === Xác định danh sách mã cần đăng ===
-    # Kết nối SMB 1 lần cho toàn bộ phiên
+    logging.info("[3/5] Ket noi SMB may chu...")
     smb_connect()
 
     ready_codes = get_all_ready_codes(input_rows)
