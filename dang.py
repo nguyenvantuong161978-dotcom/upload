@@ -425,18 +425,38 @@ def _parse_time(s):
 # └──────────────────────────────────────────────────────────────────────┘
 
 
+def _gs_retry(func, max_retries=5, wait=15, desc="Google Sheets"):
+    """Gọi hàm liên quan Google Sheets với retry + timeout.
+    Retry tối đa max_retries lần, chờ wait giây giữa mỗi lần."""
+    import socket
+    old_timeout = socket.getdefaulttimeout()
+    for attempt in range(1, max_retries + 1):
+        try:
+            socket.setdefaulttimeout(30)
+            result = func()
+            socket.setdefaulttimeout(old_timeout)
+            return result
+        except Exception as e:
+            socket.setdefaulttimeout(old_timeout)
+            logging.warning(f"{desc} lan {attempt}/{max_retries} loi: {e}")
+            if attempt < max_retries:
+                time.sleep(wait)
+    raise Exception(f"{desc}: that bai sau {max_retries} lan retry")
+
+
 def gs_client():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIAL_PATH, scope)
-    return gspread.authorize(creds)
+    def _connect():
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIAL_PATH, scope)
+        return gspread.authorize(creds)
+    return _gs_retry(_connect, desc="gs_client")
 
 
 def get_rows(client, sheet_name):
-    try:
-        return client.open(SPREADSHEET_NAME).worksheet(sheet_name).get_all_values()
-    except Exception as e:
-        logging.error(f"Loi get_rows('{SPREADSHEET_NAME}', '{sheet_name}'): {type(e).__name__}: {e}")
-        raise
+    return _gs_retry(
+        lambda: client.open(SPREADSHEET_NAME).worksheet(sheet_name).get_all_values(),
+        desc=f"get_rows('{sheet_name}')"
+    )
 
 
 def find_row_by_code(rows, code):
@@ -448,18 +468,20 @@ def find_row_by_code(rows, code):
 
 def update_source_status(client, code, status="ĐÃ ĐĂNG"):
     """Tìm dòng trong sheet NGUON có cột G == code, ghi status vào cột M."""
-    try:
+    def _update():
         ws = client.open(SPREADSHEET_NAME).worksheet(SOURCE_SHEET)
         rows = ws.get_all_values()
         for i, row in enumerate(rows[1:], start=2):
             if len(row) > 12 and norm(row[6]) == code:
                 ws.update_cell(i, 13, status)
-                logging.info("Đã cập nhật '%s' cho mã %s dòng %d (sheet NGUON).", status, code, i)
+                logging.info("Da cap nhat '%s' cho ma %s dong %d (sheet NGUON).", status, code, i)
                 return True
-        logging.warning("Không tìm thấy mã %s trong sheet NGUON (cột G).", code)
+        logging.warning("Khong tim thay ma %s trong sheet NGUON (cot G).", code)
         return False
+    try:
+        return _gs_retry(_update, desc=f"update_status({code})")
     except Exception as e:
-        logging.error("Lỗi cập nhật sheet NGUON: %s", e)
+        logging.error(f"Cap nhat trang thai loi sau retry: {e}")
         return False
 
 
@@ -1020,9 +1042,12 @@ def delete_server_folder(code):
 def cleanup_posted_codes():
     """Xóa thư mục local của các mã đã 'ĐÃ ĐĂNG'."""
     logging.info("Don cac ma da dang...")
-    client = gs_client()
-    ws = client.open(SPREADSHEET_NAME).worksheet(INPUT_SHEET)
-    rows = ws.get_all_values()
+    try:
+        client = gs_client()
+        rows = get_rows(client, INPUT_SHEET)
+    except Exception as e:
+        logging.warning(f"cleanup_posted_codes: khong ket noi duoc, bo qua. ({e})")
+        return
 
     for row in rows[1:]:
         code = row[0].strip() if len(row) > 0 else ""
