@@ -1797,6 +1797,11 @@ def main():
     import traceback
     random.seed()
 
+    # Delay ngẫu nhiên 0-180s để 10 VM không gọi API cùng lúc (20Mbps chia sẻ)
+    startup_delay = random.randint(0, 180)
+    logging.info(f"Cho {startup_delay}s truoc khi bat dau (tranh nghen mang)...")
+    time.sleep(startup_delay)
+
     # Kiểm tra mạng trước — tránh crash ngay khi gọi Google Sheets
     if not wait_for_internet():
         logging.error("Khong co mang -> bo qua phien nay.")
