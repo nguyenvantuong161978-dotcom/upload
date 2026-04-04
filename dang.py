@@ -425,22 +425,34 @@ def _parse_time(s):
 # └──────────────────────────────────────────────────────────────────────┘
 
 
-def _gs_retry(func, max_retries=5, wait=15, desc="Google Sheets"):
-    """Gọi hàm liên quan Google Sheets với retry + timeout.
-    Retry tối đa max_retries lần, chờ wait giây giữa mỗi lần."""
-    import socket
-    old_timeout = socket.getdefaulttimeout()
+def _gs_retry(func, max_retries=5, wait=15, desc="Google Sheets", timeout_per_call=60):
+    """Gọi hàm Google Sheets với retry + timeout cứng mỗi lần.
+    Mỗi lần gọi tối đa timeout_per_call giây, retry max_retries lần."""
+    import threading
     for attempt in range(1, max_retries + 1):
-        try:
-            socket.setdefaulttimeout(30)
-            result = func()
-            socket.setdefaulttimeout(old_timeout)
-            return result
-        except Exception as e:
-            socket.setdefaulttimeout(old_timeout)
-            logging.warning(f"{desc} lan {attempt}/{max_retries} loi: {e}")
-            if attempt < max_retries:
-                time.sleep(wait)
+        result_box = [None]
+        error_box = [None]
+
+        def _run():
+            try:
+                result_box[0] = func()
+            except Exception as e:
+                error_box[0] = e
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        t.join(timeout=timeout_per_call)
+
+        if t.is_alive():
+            logging.warning(f"{desc} lan {attempt}/{max_retries}: TREO qua {timeout_per_call}s!")
+        elif error_box[0]:
+            logging.warning(f"{desc} lan {attempt}/{max_retries} loi: {error_box[0]}")
+        else:
+            return result_box[0]
+
+        if attempt < max_retries:
+            logging.info(f"{desc}: cho {wait}s truoc khi thu lai...")
+            time.sleep(wait)
     raise Exception(f"{desc}: that bai sau {max_retries} lan retry")
 
 
