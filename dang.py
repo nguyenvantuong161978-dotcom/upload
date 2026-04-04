@@ -2022,11 +2022,11 @@ def main():
                     break
 
                 still_uploading = wait_image(TEMPLATE_DOI_TAI, timeout_sec=30, confidence=0.70)
-                if not still_uploading:
-                    logging.info("Video da tai xong! Tiep tuc Buoc 2 binh thuong.")
-                    break
                 remaining = int((end_wait - time.time()) / 60)
-                logging.info(f"Van dang tai... lan kiem tra {check_count}, con ~{remaining} phut.")
+                if not still_uploading:
+                    logging.info(f"Video da tai xong! (sau {check_count} lan kiem tra, con {remaining} phut)")
+                    break
+                logging.info(f"Van dang tai... lan {check_count}, con ~{remaining} phut. (end_wait={int(end_wait)}, now={int(time.time())})")
             else:
                 # Hết 1 tiếng vẫn chưa xong → bỏ qua Step 2
                 logging.warning("Het 1 tieng van chua tai xong -> bo qua Buoc 2, chuyen thang hen lich.")
