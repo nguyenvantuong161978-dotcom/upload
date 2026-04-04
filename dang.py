@@ -1817,7 +1817,13 @@ def main():
     CLICK_TIMEOUT_SEC       = int(r(*HUMAN.click_timeout))
     CLICK_CONFIDENCE        = r(*HUMAN.click_confidence)
 
-    # === BƯỚC 1: Bật IPv4 + SMB (mạng nhanh, ổn định) ===
+    # === BƯỚC 0: Đóng browser cũ TRƯỚC khi bật IPv4 ===
+    # Chrome từ phiên trước có thể vẫn mở → đóng trước để không dính IPv4
+    logging.info("[0/5] Dong browser cu (neu con tu phien truoc)...")
+    close_browsers_gently_in_rdp()
+    rsleep("small")
+
+    # === BƯỚC 1: Bật IPv4 + SMB ===
     logging.info("[1/5] Ket noi SMB may chu (bat IPv4)...")
     smb_connect()
 
@@ -1898,10 +1904,6 @@ def main():
     # === BƯỚC 4: Tắt SMB + IPv4 — từ đây chỉ dùng IPv6 ===
     logging.info("[4/5] Ngat SMB, tat IPv4. Tu day dung du lieu local + IPv6.")
     smb_disconnect()
-
-    # Đóng browser cũ → mở browser mới
-    close_browsers_gently_in_rdp()
-    rsleep("small")
 
     logging.info("Mo trinh duyet: %s", RUN_BROWSER_EXE)
     open_run_and_execute(RUN_BROWSER_EXE)
