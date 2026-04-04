@@ -2136,13 +2136,8 @@ def main():
         continue
 
     logging.info("Da hoan thanh %d/%d ma trong danh sach.", len(processed_codes), len(ready_codes))
-
-    # Pre-stage ngày mai — cần SMB để copy
-    logging.info("Pre-stage ngay mai: bat IPv4 + SMB...")
-    smb_connect()
-    pre_stage_tomorrow(input_rows)
-    smb_disconnect()
-    logging.info("Pre-stage xong, da tat IPv4.")
+    # Pre-stage ngày mai: KHÔNG bật IPv4 ở đây vì Chrome vẫn đang mở (tải video)
+    # Phiên sau (3 tiếng) sẽ đóng Chrome → bật IPv4 → copy file ngày mai
 
 
 if __name__ == "__main__":
