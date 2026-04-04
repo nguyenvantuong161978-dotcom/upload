@@ -479,7 +479,7 @@ def update_source_status(client, code, status="ĐÃ ĐĂNG"):
         logging.warning("Khong tim thay ma %s trong sheet NGUON (cot G).", code)
         return False
     try:
-        return _gs_retry(_update, desc=f"update_status({code})")
+        return _gs_retry(_update, max_retries=10, wait=30, desc=f"update_status({code})")
     except Exception as e:
         logging.error(f"Cap nhat trang thai loi sau retry: {e}")
         return False
