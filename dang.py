@@ -2166,6 +2166,6 @@ if __name__ == "__main__":
             logging.info(f"Loi lan {fail_count} -> cho {wait_min} phut roi thu lai.")
             time.sleep(wait_min * 60)
             continue
-        # Chạy xong OK → chờ 30 phút rồi kiểm tra lại (thay vì 3 tiếng)
-        logging.info("Xong phien. Cho 30 phut roi kiem tra ma moi...")
-        time.sleep(30 * 60)
+        # Chạy xong OK → chờ 3 tiếng rồi kiểm tra lại
+        logging.info("Xong phien. Cho 3 tieng roi kiem tra ma moi...")
+        time.sleep(3 * 60 * 60)
