@@ -1802,34 +1802,48 @@ def main():
     logging.info(f"Cho {startup_delay}s truoc khi bat dau (tranh nghen mang)...")
     time.sleep(startup_delay)
 
-    # Kiểm tra mạng trước — tránh crash ngay khi gọi Google Sheets
-    if not wait_for_internet():
-        logging.error("Khong co mang -> bo qua phien nay.")
-        return
-
-    # Dọn mã đã đăng — timeout 60s, không chặn tool
-    import threading
-    logging.info("[1/5] Dọn mã đã đăng (tối đa 60s)...")
-    cleanup_thread = threading.Thread(target=cleanup_posted_codes, daemon=True)
-    cleanup_thread.start()
-    cleanup_thread.join(timeout=60)
-    if cleanup_thread.is_alive():
-        logging.warning("[1/5] TREO: cleanup qua 60s! Co the mat mang -> bo qua, tiep tuc.")
-    else:
-        logging.info("[1/5] Dọn mã xong.")
-
     BROWSER_LAUNCH_WAIT_SEC = int(r(*HUMAN.browser_wait))
     CLICK_TIMEOUT_SEC       = int(r(*HUMAN.click_timeout))
     CLICK_CONFIDENCE        = r(*HUMAN.click_confidence)
 
-    logging.info("[2/5] Ket noi Google Sheets...")
-    client     = gs_client()
-    input_rows = get_rows(client, INPUT_SHEET)
-    logging.info(f"[2/5] Da doc {len(input_rows)} dong tu sheet '{INPUT_SHEET}'.")
-
-    # === Xác định danh sách mã cần đăng ===
-    logging.info("[3/5] Ket noi SMB may chu...")
+    # === BƯỚC 1: Bật IPv4 + SMB (mạng nhanh, ổn định) ===
+    logging.info("[1/5] Ket noi SMB may chu (bat IPv4)...")
     smb_connect()
+
+    # === BƯỚC 2: Lấy dữ liệu Google Sheets TRONG LÚC IPv4 CÒN BẬT ===
+    # IPv4 nhanh gấp 10 lần IPv6, tải sheet lúc này ổn định nhất
+    logging.info("[2/5] Tai du lieu Google Sheets (qua IPv4)...")
+    client = None
+    input_rows = None
+    try:
+        client = gs_client()
+        input_rows = get_rows(client, INPUT_SHEET)
+        logging.info(f"[2/5] Da doc {len(input_rows)} dong tu sheet '{INPUT_SHEET}'.")
+
+        # Lưu JSON local để dùng khi tắt IPv4
+        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
+        with open(_cache_path, "w", encoding="utf-8") as f:
+            json.dump(input_rows, f, ensure_ascii=False)
+        logging.info("[2/5] Da luu cache JSON local.")
+    except Exception as e:
+        logging.warning(f"[2/5] Khong doc duoc Sheets qua IPv4: {e}")
+        # Thử đọc từ cache cũ
+        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
+        if os.path.isfile(_cache_path):
+            with open(_cache_path, "r", encoding="utf-8") as f:
+                input_rows = json.load(f)
+            logging.info(f"[2/5] Dung cache cu ({len(input_rows)} dong).")
+        else:
+            logging.error("[2/5] Khong co cache -> khong the tiep tuc.")
+            smb_disconnect()
+            return
+
+    # Dọn mã đã đăng (nhanh vì IPv4 đang bật)
+    logging.info("[2/5] Don ma da dang...")
+    try:
+        cleanup_posted_codes()
+    except Exception as e:
+        logging.warning(f"cleanup loi (khong anh huong): {e}")
 
     ready_codes = get_all_ready_codes(input_rows)
     if not ready_codes:
@@ -1857,14 +1871,19 @@ def main():
         smb_disconnect()
         return
 
-    logging.info(f"Phien nay se dang {len(ready_codes)} ma: {ready_codes}")
+    logging.info(f"[3/5] Phien nay se dang {len(ready_codes)} ma: {ready_codes}")
 
-    # Pre-stage tất cả mã
+    # Pre-stage tất cả mã (copy file qua SMB/IPv4)
+    logging.info("[3/5] Copy file tu may chu...")
     for c in ready_codes:
         try:
             ensure_local_folder(c)
         except Exception as e:
             logging.warning(f"Prestage loi {c}: {e}")
+
+    # === BƯỚC 4: Tắt SMB + IPv4 — từ đây chỉ dùng IPv6 ===
+    logging.info("[4/5] Ngat SMB, tat IPv4. Tu day dung du lieu local + IPv6.")
+    smb_disconnect()
 
     # Đóng browser cũ → mở browser mới
     close_browsers_gently_in_rdp()
@@ -1895,8 +1914,9 @@ def main():
         target_folder = FOLDER_PATTERN.format(code=code)
         logging.info("Thu muc ma: %s", target_folder)
 
-        if not ensure_local_folder(code):
-            logging.error(f"Khong the chuan bi thu muc video cho ma {code} => bo qua.")
+        # Kiểm tra file local — KHÔNG gọi SMB/IPv4 ở đây
+        if not has_required_files(os.path.join(LOCAL_DONE_ROOT, code)):
+            logging.error(f"Thieu file cho ma {code} (da copy truoc do). Bo qua.")
             continue
 
         # Mở tab mới (trừ lần đầu)
@@ -2019,8 +2039,13 @@ def main():
                 except Exception as ex:
                     logging.warning(f"Khong xoa duoc local: {ex}")
 
-                # Copy lại từ server
+                # Copy lại: bật IPv4 → SMB → copy → tắt IPv4
+                logging.info("Bat IPv4 + SMB de copy lai...")
+                smb_connect()
                 copy_ok = ensure_local_folder(code)
+                smb_disconnect()
+                logging.info("Da tat IPv4 sau copy lai.")
+
                 if not copy_ok:
                     logging.error(f"Copy lai tu server that bai -> bo qua ma {code}.")
                     continue
@@ -2029,8 +2054,8 @@ def main():
                 ready_codes.append(code)
                 logging.info(f"Da them lai ma {code} vao cuoi danh sach de thu lai.")
 
-                # Mở lại browser
-                logging.info("Mo lai browser...")
+                # Mở lại browser (IPv4 đã tắt)
+                logging.info("Mo lai browser (IPv4 da tat)...")
                 open_run_and_execute(RUN_BROWSER_EXE)
                 time.sleep(BROWSER_LAUNCH_WAIT_SEC)
                 first_time = True
@@ -2067,10 +2092,16 @@ def main():
                     logging.info(f"Da xoa local loi: {local_folder_err}")
             except Exception:
                 pass
+            # Bật IPv4 → copy lại → tắt IPv4
+            logging.info("Bat IPv4 + SMB de copy lai...")
+            smb_connect()
             copy_ok = ensure_local_folder(code)
+            smb_disconnect()
+            logging.info("Da tat IPv4 sau copy lai.")
             if copy_ok:
                 ready_codes.append(code)
                 logging.info(f"Da them lai ma {code} de thu lai.")
+            # Mở browser (IPv4 đã tắt)
             open_run_and_execute(RUN_BROWSER_EXE)
             time.sleep(BROWSER_LAUNCH_WAIT_SEC)
             first_time = True
@@ -2092,11 +2123,12 @@ def main():
 
     logging.info("Da hoan thanh %d/%d ma trong danh sach.", len(processed_codes), len(ready_codes))
 
-    # Pre-stage ngày mai
+    # Pre-stage ngày mai — cần SMB để copy
+    logging.info("Pre-stage ngay mai: bat IPv4 + SMB...")
+    smb_connect()
     pre_stage_tomorrow(input_rows)
-
-    # Ngắt SMB khi xong tất cả
     smb_disconnect()
+    logging.info("Pre-stage xong, da tat IPv4.")
 
 
 if __name__ == "__main__":
