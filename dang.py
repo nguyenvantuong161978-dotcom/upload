@@ -1040,13 +1040,24 @@ def delete_server_folder(code):
 
 
 def cleanup_posted_codes():
-    """Xóa thư mục local của các mã đã 'ĐÃ ĐĂNG'."""
+    """Xóa thư mục local của các mã đã 'ĐÃ ĐĂNG'. Dùng cache nếu Sheets lỗi."""
     logging.info("Don cac ma da dang...")
+    rows = None
     try:
         client = gs_client()
         rows = get_rows(client, INPUT_SHEET)
     except Exception as e:
-        logging.warning(f"cleanup_posted_codes: khong ket noi duoc, bo qua. ({e})")
+        logging.warning(f"cleanup: Sheets loi ({e}), thu doc cache...")
+        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
+        if os.path.isfile(_cache_path):
+            try:
+                with open(_cache_path, "r", encoding="utf-8") as f:
+                    rows = json.load(f)
+                logging.info(f"cleanup: dung cache ({len(rows)} dong).")
+            except Exception:
+                pass
+    if not rows:
+        logging.warning("cleanup: khong co du lieu, bo qua.")
         return
 
     for row in rows[1:]:
@@ -1839,11 +1850,14 @@ def main():
             return
 
     # Dọn mã đã đăng (nhanh vì IPv4 đang bật)
-    logging.info("[2/5] Don ma da dang...")
-    try:
-        cleanup_posted_codes()
-    except Exception as e:
-        logging.warning(f"cleanup loi (khong anh huong): {e}")
+    # Dọn mã đã đăng — timeout 90s (không quan trọng, không chặn tool)
+    import threading
+    logging.info("[2/5] Don ma da dang (toi da 90s)...")
+    cleanup_thread = threading.Thread(target=cleanup_posted_codes, daemon=True)
+    cleanup_thread.start()
+    cleanup_thread.join(timeout=90)
+    if cleanup_thread.is_alive():
+        logging.warning("[2/5] cleanup treo qua 90s -> bo qua.")
 
     ready_codes = get_all_ready_codes(input_rows)
     if not ready_codes:
