@@ -2018,14 +2018,14 @@ def main():
 
         if pos_doitai:
             # Video đang tải → chờ tối đa 1 tiếng cho nó biến mất
-            logging.info("Video dang tai! Cho toi da 1 tieng de tai xong...")
-            WAIT_UPLOAD_MAX = 60 * 60  # 1 tiếng
+            logging.info("Video dang tai! Cho toi da 2 tieng de tai xong...")
+            WAIT_UPLOAD_MAX = 2 * 60 * 60  # 2 tiếng
             end_wait = time.time() + WAIT_UPLOAD_MAX
             check_count = 0
             video_error = False
 
             while time.time() < end_wait:
-                time.sleep(60)  # chờ 1 phút rồi mới kiểm tra lại
+                time.sleep(300)  # chờ 5 phút rồi mới kiểm tra lại
                 check_count += 1
 
                 # Kiểm tra loi.png — video bị lỗi (mp4 hỏng)
@@ -2043,7 +2043,7 @@ def main():
                 logging.info(f"Van dang tai... lan {check_count}, con ~{remaining} phut. (end_wait={int(end_wait)}, now={int(time.time())})")
             else:
                 # Hết 1 tiếng vẫn chưa xong → bỏ qua Step 2
-                logging.warning("Het 1 tieng van chua tai xong -> bo qua Buoc 2, chuyen thang hen lich.")
+                logging.warning("Het 2 tieng van chua tai xong -> bo qua Buoc 2, chuyen thang hen lich.")
                 skip_step2 = True
 
             # === XỬ LÝ VIDEO LỖI: đóng browser → xóa local → copy lại → thử lại ===
