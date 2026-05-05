@@ -1885,14 +1885,17 @@ def main():
         return
 
     # Lọc: chỉ giữ mã có đủ file ở local hoặc server
+    # Kiểm tra nhiều đường dẫn: LOCAL_DONE_ROOT, SERVER_DONE_ROOT, Z:\AUTO\done, D:\AUTO\done
     ready_codes_filtered = []
     for c in ready_codes:
-        if has_required_files(os.path.join(LOCAL_DONE_ROOT, c)):
-            ready_codes_filtered.append(c)
-        elif has_required_files(os.path.join(SERVER_DONE_ROOT, c)):
-            ready_codes_filtered.append(c)
-        else:
-            logging.warning("Bo ma %s: thieu bo o ca local & server.", c)
+        found = False
+        for root in [LOCAL_DONE_ROOT, SERVER_DONE_ROOT, r"Z:\AUTO\done", r"D:\AUTO\done"]:
+            if has_required_files(os.path.join(root, c)):
+                ready_codes_filtered.append(c)
+                found = True
+                break
+        if not found:
+            logging.warning("Bo ma %s: thieu bo o tat ca cac duong dan.", c)
     ready_codes = ready_codes_filtered
 
     # GIỮ kết nối SMB — sẽ ngắt khi xong tất cả mã
