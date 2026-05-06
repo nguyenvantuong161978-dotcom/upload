@@ -536,6 +536,26 @@ def get_tomorrow_codes(rows):
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
+def done_roots():
+    roots = [r"Z:\AUTO\done", r"D:\AUTO\done", LOCAL_DONE_ROOT, SERVER_DONE_ROOT]
+    unique_roots = []
+    seen = set()
+    for root in roots:
+        key = root.lower()
+        if key not in seen:
+            unique_roots.append(root)
+            seen.add(key)
+    return unique_roots
+
+
+def find_done_folder(code):
+    for root in done_roots():
+        folder = os.path.join(root, code)
+        if has_required_files(folder):
+            return folder
+    return ""
+
+
 def _enable_ipv4():
     """Bật IPv4 tạm thời."""
     try:
@@ -942,12 +962,17 @@ def ensure_local_folder(code):
     Copy TỪNG FILE, kiểm tra dung lượng, retry nếu lỗi.
     SMB: kết nối trước, ngắt sau khi copy xong."""
     local_folder  = os.path.join(LOCAL_DONE_ROOT, code)
-    server_folder = os.path.join(SERVER_DONE_ROOT, code)
+    source_folder = find_done_folder(code)
 
-    local_enough  = os.path.isdir(local_folder) and has_required_files(local_folder)
+    if source_folder:
+        if os.path.abspath(source_folder).lower() == os.path.abspath(local_folder).lower():
+            logging.info(f"Local da du bo: {local_folder}")
+            return True
+        logging.info(f"Dung nguon file: {source_folder}")
+        return _do_ensure_local(code, local_folder, source_folder, os.path.isdir(local_folder) and has_required_files(local_folder))
 
-    # SMB đã kết nối ở main() — không cần kết nối/ngắt ở đây
-    return _do_ensure_local(code, local_folder, server_folder, local_enough)
+    logging.error(f"Khong tim thay bo file cho {code} trong: {done_roots()}")
+    return False
 
 
 def _do_ensure_local(code, local_folder, server_folder, local_enough):
@@ -1884,18 +1909,15 @@ def main():
         smb_disconnect()
         return
 
-    # Lọc: chỉ giữ mã có đủ file ở local hoặc server
-    # Kiểm tra nhiều đường dẫn: LOCAL_DONE_ROOT, SERVER_DONE_ROOT, Z:\AUTO\done, D:\AUTO\done
+    # Lọc: chỉ giữ mã có đủ file, ưu tiên Z:\AUTO\done rồi D:\AUTO\done
     ready_codes_filtered = []
     for c in ready_codes:
-        found = False
-        for root in [LOCAL_DONE_ROOT, SERVER_DONE_ROOT, r"Z:\AUTO\done", r"D:\AUTO\done"]:
-            if has_required_files(os.path.join(root, c)):
-                ready_codes_filtered.append(c)
-                found = True
-                break
-        if not found:
-            logging.warning("Bo ma %s: thieu bo o tat ca cac duong dan.", c)
+        source_folder = find_done_folder(c)
+        if source_folder:
+            logging.info("Ma %s co du bo tai: %s", c, source_folder)
+            ready_codes_filtered.append(c)
+        else:
+            logging.warning("Bo ma %s: thieu bo o tat ca cac duong dan: %s", c, done_roots())
     ready_codes = ready_codes_filtered
 
     # GIỮ kết nối SMB — sẽ ngắt khi xong tất cả mã
@@ -1942,13 +1964,11 @@ def main():
             logging.error("Khong tim thay dong du lieu cho ma: %s", code)
             continue
 
-        target_folder = FOLDER_PATTERN.format(code=code)
-        logging.info("Thu muc ma: %s", target_folder)
-
-        # Kiểm tra file local — KHÔNG gọi SMB/IPv4 ở đây
-        if not has_required_files(os.path.join(LOCAL_DONE_ROOT, code)):
-            logging.error(f"Thieu file cho ma {code} (da copy truoc do). Bo qua.")
+        target_folder = find_done_folder(code)
+        if not target_folder:
+            logging.error(f"Thieu file cho ma {code} trong tat ca cac duong dan. Bo qua.")
             continue
+        logging.info("Thu muc ma: %s", target_folder)
 
         # Mở tab mới (trừ lần đầu)
         if not first_time:
