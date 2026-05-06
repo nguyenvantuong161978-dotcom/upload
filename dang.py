@@ -556,6 +556,16 @@ def find_done_folder(code):
     return ""
 
 
+def wait_for_done_folder(code, timeout_sec=30):
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        folder = find_done_folder(code)
+        if folder:
+            return folder
+        time.sleep(5)
+    return ""
+
+
 def _enable_ipv4():
     """Bật IPv4 tạm thời."""
     try:
@@ -962,7 +972,7 @@ def ensure_local_folder(code):
     Copy TỪNG FILE, kiểm tra dung lượng, retry nếu lỗi.
     SMB: kết nối trước, ngắt sau khi copy xong."""
     local_folder  = os.path.join(LOCAL_DONE_ROOT, code)
-    source_folder = find_done_folder(code)
+    source_folder = wait_for_done_folder(code, timeout_sec=30)
 
     if source_folder:
         if os.path.abspath(source_folder).lower() == os.path.abspath(local_folder).lower():
@@ -1912,7 +1922,7 @@ def main():
     # Lọc: chỉ giữ mã có đủ file, ưu tiên Z:\AUTO\done rồi D:\AUTO\done
     ready_codes_filtered = []
     for c in ready_codes:
-        source_folder = find_done_folder(c)
+        source_folder = wait_for_done_folder(c, timeout_sec=30)
         if source_folder:
             logging.info("Ma %s co du bo tai: %s", c, source_folder)
             ready_codes_filtered.append(c)
@@ -1964,7 +1974,7 @@ def main():
             logging.error("Khong tim thay dong du lieu cho ma: %s", code)
             continue
 
-        target_folder = find_done_folder(code)
+        target_folder = wait_for_done_folder(code, timeout_sec=30)
         if not target_folder:
             logging.error(f"Thieu file cho ma {code} trong tat ca cac duong dan. Bo qua.")
             continue
