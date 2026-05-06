@@ -566,16 +566,32 @@ def wait_for_done_folder(code, timeout_sec=30):
     return ""
 
 
+def _ipv4_enabled():
+    try:
+        result = subprocess.run(
+            'powershell -NoProfile -Command "(Get-NetAdapterBinding -ComponentID ms_tcpip | Where-Object { $_.Enabled -eq $true } | Select-Object -First 1).Enabled"',
+            shell=True, capture_output=True, text=True, timeout=20)
+        return "True" in result.stdout
+    except Exception:
+        return False
+
+
 def _enable_ipv4():
     """Bật IPv4 tạm thời."""
     try:
         subprocess.run(
-            'powershell -Command "Get-NetAdapter | Enable-NetAdapterBinding -ComponentID ms_tcpip -ErrorAction SilentlyContinue"',
-            shell=True, capture_output=True, timeout=15)
-        time.sleep(5)
-        logging.info("IPv4 da bat.")
-    except Exception:
-        pass
+            'powershell -NoProfile -Command "Get-NetAdapter | ForEach-Object { Enable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }"',
+            shell=True, capture_output=True, timeout=30)
+        for _ in range(12):
+            if _ipv4_enabled():
+                logging.info("IPv4 da bat that.")
+                return True
+            time.sleep(5)
+        logging.error("IPv4 khong bat duoc sau 60s.")
+        return False
+    except Exception as e:
+        logging.error(f"IPv4 exception: {e}")
+        return False
 
 
 def _disable_ipv4():
@@ -595,7 +611,8 @@ def smb_connect():
         return True
     try:
         if NEED_IPV4_TOGGLE:
-            _enable_ipv4()
+            if not _enable_ipv4():
+                return False
 
         # Ngắt kết nối cũ
         subprocess.run(f'net use {SMB_DRIVE} /delete /y',
