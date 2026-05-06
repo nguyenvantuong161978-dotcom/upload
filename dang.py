@@ -533,7 +533,7 @@ def get_tomorrow_codes(rows):
 # │ S8 - QUẢN LÝ FILE & THƯ MỤC                                        │
 # └──────────────────────────────────────────────────────────────────────┘
 
-IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 
 def done_roots():
