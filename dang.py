@@ -533,65 +533,19 @@ def get_tomorrow_codes(rows):
 # │ S8 - QUẢN LÝ FILE & THƯ MỤC                                        │
 # └──────────────────────────────────────────────────────────────────────┘
 
-IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-
-
-def done_roots():
-    roots = [r"Z:\AUTO\done", r"D:\AUTO\done", LOCAL_DONE_ROOT, SERVER_DONE_ROOT]
-    unique_roots = []
-    seen = set()
-    for root in roots:
-        key = root.lower()
-        if key not in seen:
-            unique_roots.append(root)
-            seen.add(key)
-    return unique_roots
-
-
-def find_done_folder(code):
-    for root in done_roots():
-        folder = os.path.join(root, code)
-        if has_required_files(folder):
-            return folder
-    return ""
-
-
-def wait_for_done_folder(code, timeout_sec=30):
-    deadline = time.time() + timeout_sec
-    while time.time() < deadline:
-        folder = find_done_folder(code)
-        if folder:
-            return folder
-        time.sleep(5)
-    return ""
-
-
-def _ipv4_enabled():
-    try:
-        result = subprocess.run(
-            'powershell -NoProfile -Command "(Get-NetAdapterBinding -ComponentID ms_tcpip | Where-Object { $_.Enabled -eq $true } | Select-Object -First 1).Enabled"',
-            shell=True, capture_output=True, text=True, timeout=20)
-        return "True" in result.stdout
-    except Exception:
-        return False
+IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _enable_ipv4():
     """Bật IPv4 tạm thời."""
     try:
         subprocess.run(
-            'powershell -NoProfile -Command "Get-NetAdapter | ForEach-Object { Enable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }"',
-            shell=True, capture_output=True, timeout=30)
-        for _ in range(12):
-            if _ipv4_enabled():
-                logging.info("IPv4 da bat that.")
-                return True
-            time.sleep(5)
-        logging.error("IPv4 khong bat duoc sau 60s.")
-        return False
-    except Exception as e:
-        logging.error(f"IPv4 exception: {e}")
-        return False
+            'powershell -Command "Get-NetAdapter | Enable-NetAdapterBinding -ComponentID ms_tcpip -ErrorAction SilentlyContinue"',
+            shell=True, capture_output=True, timeout=15)
+        time.sleep(5)
+        logging.info("IPv4 da bat.")
+    except Exception:
+        pass
 
 
 def _disable_ipv4():
@@ -611,8 +565,7 @@ def smb_connect():
         return True
     try:
         if NEED_IPV4_TOGGLE:
-            if not _enable_ipv4():
-                return False
+            _enable_ipv4()
 
         # Ngắt kết nối cũ
         subprocess.run(f'net use {SMB_DRIVE} /delete /y',
@@ -989,17 +942,12 @@ def ensure_local_folder(code):
     Copy TỪNG FILE, kiểm tra dung lượng, retry nếu lỗi.
     SMB: kết nối trước, ngắt sau khi copy xong."""
     local_folder  = os.path.join(LOCAL_DONE_ROOT, code)
-    source_folder = wait_for_done_folder(code, timeout_sec=30)
+    server_folder = os.path.join(SERVER_DONE_ROOT, code)
 
-    if source_folder:
-        if os.path.abspath(source_folder).lower() == os.path.abspath(local_folder).lower():
-            logging.info(f"Local da du bo: {local_folder}")
-            return True
-        logging.info(f"Dung nguon file: {source_folder}")
-        return _do_ensure_local(code, local_folder, source_folder, os.path.isdir(local_folder) and has_required_files(local_folder))
+    local_enough  = os.path.isdir(local_folder) and has_required_files(local_folder)
 
-    logging.error(f"Khong tim thay bo file cho {code} trong: {done_roots()}")
-    return False
+    # SMB đã kết nối ở main() — không cần kết nối/ngắt ở đây
+    return _do_ensure_local(code, local_folder, server_folder, local_enough)
 
 
 def _do_ensure_local(code, local_folder, server_folder, local_enough):
@@ -1936,15 +1884,15 @@ def main():
         smb_disconnect()
         return
 
-    # Lọc: chỉ giữ mã có đủ file, ưu tiên Z:\AUTO\done rồi D:\AUTO\done
+    # Lọc: chỉ giữ mã có đủ file ở local hoặc server
     ready_codes_filtered = []
     for c in ready_codes:
-        source_folder = wait_for_done_folder(c, timeout_sec=30)
-        if source_folder:
-            logging.info("Ma %s co du bo tai: %s", c, source_folder)
+        if has_required_files(os.path.join(LOCAL_DONE_ROOT, c)):
+            ready_codes_filtered.append(c)
+        elif has_required_files(os.path.join(SERVER_DONE_ROOT, c)):
             ready_codes_filtered.append(c)
         else:
-            logging.warning("Bo ma %s: thieu bo o tat ca cac duong dan: %s", c, done_roots())
+            logging.warning("Bo ma %s: thieu bo o ca local & server.", c)
     ready_codes = ready_codes_filtered
 
     # GIỮ kết nối SMB — sẽ ngắt khi xong tất cả mã
@@ -1991,11 +1939,13 @@ def main():
             logging.error("Khong tim thay dong du lieu cho ma: %s", code)
             continue
 
-        target_folder = wait_for_done_folder(code, timeout_sec=30)
-        if not target_folder:
-            logging.error(f"Thieu file cho ma {code} trong tat ca cac duong dan. Bo qua.")
-            continue
+        target_folder = FOLDER_PATTERN.format(code=code)
         logging.info("Thu muc ma: %s", target_folder)
+
+        # Kiểm tra file local — KHÔNG gọi SMB/IPv4 ở đây
+        if not has_required_files(os.path.join(LOCAL_DONE_ROOT, code)):
+            logging.error(f"Thieu file cho ma {code} (da copy truoc do). Bo qua.")
+            continue
 
         # Mở tab mới (trừ lần đầu)
         if not first_time:
