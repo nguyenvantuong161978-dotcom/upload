@@ -95,6 +95,26 @@ BASE_DIR          = os.path.dirname(os.path.abspath(__file__))
 FOLDER_PATTERN    = os.path.join(LOCAL_DONE_ROOT, "{code}")
 
 
+def discover_channels():
+    """Quét thư mục cùng cấp với upload/ để tìm các kênh.
+    Một kênh = thư mục có file {tên_thư_mục}.exe bên trong."""
+    parent = os.path.dirname(_UPLOAD_DIR)
+    channels = []
+    try:
+        for name in sorted(os.listdir(parent)):
+            dir_path = os.path.join(parent, name)
+            if not os.path.isdir(dir_path):
+                continue
+            if name.lower() == "upload":
+                continue
+            exe_path = os.path.join(dir_path, f"{name}.exe")
+            if os.path.isfile(exe_path):
+                channels.append({"code": name, "exe": exe_path, "dir": dir_path})
+    except Exception as e:
+        logging.warning(f"Loi khi quet thu muc kenh: {e}")
+    return channels
+
+
 # ┌──────────────────────────────────────────────────────────────────────┐
 # │ S3 - CẤU HÌNH CỘT GOOGLE SHEETS (zero-based index)                 │
 # └──────────────────────────────────────────────────────────────────────┘
@@ -497,12 +517,14 @@ def update_source_status(client, code, status="ĐÃ ĐĂNG"):
         return False
 
 
-def get_all_ready_codes(rows):
+def get_all_ready_codes(rows, channel_code=None):
     """Lấy tất cả code cùng kênh, trạng thái OK, lịch hôm nay và giờ > hiện tại."""
+    if channel_code is None:
+        channel_code = CHANNEL_CODE
     now = datetime.now()
     out = []
     for row in rows[1:]:
-        if len(row) > 61 and norm(row[IDX_CHANNEL_AI]) == CHANNEL_CODE and norm(row[IDX_STATUS_AV]) == STATUS_OK:
+        if len(row) > 61 and norm(row[IDX_CHANNEL_AI]) == channel_code and norm(row[IDX_STATUS_AV]) == STATUS_OK:
             d = _parse_date(norm(row[IDX_DATE_BI]) or "")
             t = _parse_time(norm(row[IDX_TIME_BJ]) or "")
             if not d or not t:
@@ -515,12 +537,14 @@ def get_all_ready_codes(rows):
     return out
 
 
-def get_tomorrow_codes(rows):
+def get_tomorrow_codes(rows, channel_code=None):
     """Lấy code có lịch đúng NGÀY MAI."""
+    if channel_code is None:
+        channel_code = CHANNEL_CODE
     tomorrow = datetime.now().date() + timedelta(days=1)
     out = []
     for row in rows[1:]:
-        if len(row) > 61 and norm(row[IDX_CHANNEL_AI]) == CHANNEL_CODE and norm(row[IDX_STATUS_AV]) == STATUS_OK:
+        if len(row) > 61 and norm(row[IDX_CHANNEL_AI]) == channel_code and norm(row[IDX_STATUS_AV]) == STATUS_OK:
             d = _parse_date(norm(row[IDX_DATE_BI]) or "")
             if d and d == tomorrow:
                 code = norm(row[0])
@@ -1105,14 +1129,16 @@ def open_run_and_execute(command_line):
     rsleep("medium")
 
 
-def close_browsers_gently_in_rdp():
+def close_browsers_gently_in_rdp(browser_exe=None):
     """Đóng trình duyệt 3 lớp: nhẹ → mạnh → taskkill."""
     # Xóa temp
     logging.info("Xoa cac file trong thu muc temp...")
     open_run_and_execute('cmd /c del /q /f /s "%temp%\\*.*" >nul 2>&1')
     rsleep("small")
 
-    exebase = os.path.splitext(os.path.basename(RUN_BROWSER_EXE))[0]
+    if browser_exe is None:
+        browser_exe = RUN_BROWSER_EXE
+    exebase = os.path.splitext(os.path.basename(browser_exe))[0]
 
     # Lần 1: đóng nhẹ bằng CloseMainWindow()
     ps_close = (
@@ -1133,7 +1159,7 @@ def close_browsers_gently_in_rdp():
     rsleep("small")
 
     # Lần 3: taskkill mạnh
-    exename = os.path.basename(RUN_BROWSER_EXE)
+    exename = os.path.basename(browser_exe)
     skill = (
         'cmd /c '
         'taskkill /F /IM chrome.exe /T 2>nul & '
@@ -1760,10 +1786,10 @@ def handle_step3_4_flow(active_row, client, code):
 # │ S13 - MAIN LOOP                                                     │
 # └──────────────────────────────────────────────────────────────────────┘
 
-def pre_stage_tomorrow(input_rows):
+def pre_stage_tomorrow(input_rows, channel_code=None):
     """Copy sẵn video ngày mai."""
     try:
-        tomorrow_codes = get_tomorrow_codes(input_rows)
+        tomorrow_codes = get_tomorrow_codes(input_rows, channel_code)
         if tomorrow_codes:
             # SMB đã kết nối ở main()
             tmr_ok = [c for c in tomorrow_codes
@@ -1816,115 +1842,23 @@ def wait_for_internet(max_wait=1800):
     return False
 
 
-def main():
+def post_channel(ch, ready_codes, input_rows, client):
+    """Đăng video cho 1 kênh. Trả về số mã đã đăng thành công."""
     import traceback
-    random.seed()
-
-    # Delay ngẫu nhiên 0-180s để 10 VM không gọi API cùng lúc (20Mbps chia sẻ)
-    startup_delay = random.randint(0, 180)
-    logging.info(f"Cho {startup_delay}s truoc khi bat dau (tranh nghen mang)...")
-    time.sleep(startup_delay)
+    ch_code = ch["code"]
+    ch_exe = ch["exe"]
 
     BROWSER_LAUNCH_WAIT_SEC = int(r(*HUMAN.browser_wait))
     CLICK_TIMEOUT_SEC       = int(r(*HUMAN.click_timeout))
     CLICK_CONFIDENCE        = r(*HUMAN.click_confidence)
 
-    # === BƯỚC 0: Đóng browser cũ TRƯỚC khi bật IPv4 ===
-    # Chrome từ phiên trước có thể vẫn mở → đóng trước để không dính IPv4
-    logging.info("[0/5] Dong browser cu (neu con tu phien truoc)...")
-    close_browsers_gently_in_rdp()
-    rsleep("small")
-
-    # === BƯỚC 1: Bật IPv4 + SMB ===
-    logging.info("[1/5] Ket noi SMB may chu (bat IPv4)...")
-    smb_connect()
-
-    # === BƯỚC 2: Lấy dữ liệu Google Sheets TRONG LÚC IPv4 CÒN BẬT ===
-    # IPv4 nhanh gấp 10 lần IPv6, tải sheet lúc này ổn định nhất
-    logging.info("[2/5] Tai du lieu Google Sheets (qua IPv4)...")
-    client = None
-    input_rows = None
-    try:
-        client = gs_client()
-        input_rows = get_rows(client, INPUT_SHEET)
-        logging.info(f"[2/5] Da doc {len(input_rows)} dong tu sheet '{INPUT_SHEET}'.")
-
-        # Lưu JSON local để dùng khi tắt IPv4
-        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
-        with open(_cache_path, "w", encoding="utf-8") as f:
-            json.dump(input_rows, f, ensure_ascii=False)
-        logging.info("[2/5] Da luu cache JSON local.")
-    except Exception as e:
-        logging.warning(f"[2/5] Khong doc duoc Sheets qua IPv4: {e}")
-        # Thử đọc từ cache cũ
-        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
-        if os.path.isfile(_cache_path):
-            with open(_cache_path, "r", encoding="utf-8") as f:
-                input_rows = json.load(f)
-            logging.info(f"[2/5] Dung cache cu ({len(input_rows)} dong).")
-        else:
-            logging.error("[2/5] Khong co cache -> khong the tiep tuc.")
-            smb_disconnect()
-            return
-
-    # Dọn mã đã đăng (nhanh vì IPv4 đang bật)
-    # Dọn mã đã đăng — timeout 90s (không quan trọng, không chặn tool)
-    import threading
-    logging.info("[2/5] Don ma da dang (toi da 90s)...")
-    cleanup_thread = threading.Thread(target=cleanup_posted_codes, daemon=True)
-    cleanup_thread.start()
-    cleanup_thread.join(timeout=90)
-    if cleanup_thread.is_alive():
-        logging.warning("[2/5] cleanup treo qua 90s -> bo qua.")
-
-    ready_codes = get_all_ready_codes(input_rows)
-    if not ready_codes:
-        logging.info(f"Khong co ma thoa ({CHANNEL_CODE}, {STATUS_OK}) cho hom nay. Pre-stage ngay mai.")
-        pre_stage_tomorrow(input_rows)
-        smb_disconnect()
-        return
-
-    # Lọc: chỉ giữ mã có đủ file ở local hoặc server
-    ready_codes_filtered = []
-    for c in ready_codes:
-        if has_required_files(os.path.join(LOCAL_DONE_ROOT, c)):
-            ready_codes_filtered.append(c)
-        elif has_required_files(os.path.join(SERVER_DONE_ROOT, c)):
-            ready_codes_filtered.append(c)
-        else:
-            logging.warning("Bo ma %s: thieu bo o ca local & server.", c)
-    ready_codes = ready_codes_filtered
-
-    # GIỮ kết nối SMB — sẽ ngắt khi xong tất cả mã
-
-    if not ready_codes:
-        logging.info("Khong con ma hop le sau khi kiem tra thu muc. Pre-stage ngay mai.")
-        pre_stage_tomorrow(input_rows)
-        smb_disconnect()
-        return
-
-    logging.info(f"[3/5] Phien nay se dang {len(ready_codes)} ma: {ready_codes}")
-
-    # Pre-stage tất cả mã (copy file qua SMB/IPv4)
-    logging.info("[3/5] Copy file tu may chu...")
-    for c in ready_codes:
-        try:
-            ensure_local_folder(c)
-        except Exception as e:
-            logging.warning(f"Prestage loi {c}: {e}")
-
-    # === BƯỚC 4: Tắt SMB + IPv4 — từ đây chỉ dùng IPv6 ===
-    logging.info("[4/5] Ngat SMB, tat IPv4. Tu day dung du lieu local + IPv6.")
-    smb_disconnect()
-
-    logging.info("Mo trinh duyet: %s", RUN_BROWSER_EXE)
-    open_run_and_execute(RUN_BROWSER_EXE)
+    logging.info("Mo trinh duyet kenh %s: %s", ch_code, ch_exe)
+    open_run_and_execute(ch_exe)
     time.sleep(BROWSER_LAUNCH_WAIT_SEC)
 
-    # === VÒNG LẶP ĐĂNG TỪNG MÃ ===
     first_time = True
     processed_codes = set()
-    error_retry_count = {}  # đếm số lần retry khi video lỗi
+    error_retry_count = {}
 
     for round_idx, code in enumerate(ready_codes, 1):
       try:
@@ -1932,7 +1866,7 @@ def main():
             logging.info("Ma %s da xu ly. Bo qua.", code)
             continue
 
-        logging.info("=== Vong dang #%d | CODE: %s ===", round_idx, code)
+        logging.info("=== Kenh %s | Vong dang #%d | CODE: %s ===", ch_code, round_idx, code)
 
         active_row = find_row_by_code(input_rows, code)
         if not active_row:
@@ -1942,22 +1876,18 @@ def main():
         target_folder = FOLDER_PATTERN.format(code=code)
         logging.info("Thu muc ma: %s", target_folder)
 
-        # Kiểm tra file local — KHÔNG gọi SMB/IPv4 ở đây
         if not has_required_files(os.path.join(LOCAL_DONE_ROOT, code)):
             logging.error(f"Thieu file cho ma {code} (da copy truoc do). Bo qua.")
             continue
 
-        # Mở tab mới (trừ lần đầu)
         if not first_time:
             pyautogui.hotkey('ctrl', 't'); rsleep("small")
 
-        # Điều hướng tới trang upload
         logging.info("Di toi: %s", UPLOAD_URL)
         pyautogui.hotkey('ctrl', 'l'); rsleep("tiny")
         paste_text(UPLOAD_URL)
         pyautogui.press('enter'); rsleep("medium")
 
-        # Phóng to cửa sổ
         logging.info("Phong to cua so trinh duyet...")
         try:
             pyautogui.keyDown('alt'); pyautogui.press('space'); pyautogui.keyUp('alt'); rsleep("tiny")
@@ -1971,7 +1901,6 @@ def main():
 
         pyautogui.press('f5'); rsleep("medium")
 
-        # Chờ nút Select files
         logging.info("Cho nut Select files (chonfile.png)...")
         if not wait_and_click_image(TEMPLATE_SELECT_BTN,
                                     timeout_sec=CLICK_TIMEOUT_SEC,
@@ -1988,7 +1917,6 @@ def main():
                 logging.error("Khong click duoc nut Select files. Bo qua ma %s.", code)
                 continue
 
-        # Chờ hộp thoại Open
         logging.info("Cho hop thoai Open (open.png)...")
         pos_open = wait_image(TEMPLATE_OPEN_READY, timeout_sec=CLICK_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
         if not pos_open:
@@ -1996,39 +1924,33 @@ def main():
             first_time = False
             continue
 
-        # Chọn .mp4
         logging.info("Chon .mp4 dau tien trong: %s", target_folder)
         file_dialog_select_first_mp4(target_folder)
         logging.info("Da chon video — YouTube bat dau upload.")
 
-        # Chờ metadata sẵn sàng
         pos_next = wait_image(TEMPLATE_NEXT_BTN, timeout_sec=CLICK_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
         if not pos_next:
             logging.error("Khong thay giao dien metadata voi ma %s. Bo qua.", code)
             first_time = False
             continue
 
-        # === THỰC HIỆN 3 BƯỚC CHÍNH ===
-        handle_metadata_flow(active_row)      # Bước 1
+        handle_metadata_flow(active_row)
 
-        # === KIỂM TRA VIDEO ĐANG TẢI (doitai.png) TRƯỚC KHI VÀO BƯỚC 2 ===
         skip_step2 = False
         logging.info("Kiem tra video dang tai (doitai.png)...")
         pos_doitai = wait_image(TEMPLATE_DOI_TAI, timeout_sec=15, confidence=0.75)
 
         if pos_doitai:
-            # Video đang tải → chờ tối đa 1 tiếng cho nó biến mất
             logging.info("Video dang tai! Cho toi da 2 tieng de tai xong...")
-            WAIT_UPLOAD_MAX = 2 * 60 * 60  # 2 tiếng
+            WAIT_UPLOAD_MAX = 2 * 60 * 60
             end_wait = time.time() + WAIT_UPLOAD_MAX
             check_count = 0
             video_error = False
 
             while time.time() < end_wait:
-                time.sleep(300)  # chờ 5 phút rồi mới kiểm tra lại
+                time.sleep(300)
                 check_count += 1
 
-                # Kiểm tra loi.png — video bị lỗi (mp4 hỏng)
                 pos_loi = wait_image(TEMPLATE_LOI, timeout_sec=5, confidence=0.70)
                 if pos_loi:
                     logging.error("PHAT HIEN LOI VIDEO (loi.png)! MP4 bi hong.")
@@ -2040,13 +1962,11 @@ def main():
                 if not still_uploading:
                     logging.info(f"Video da tai xong! (sau {check_count} lan kiem tra, con {remaining} phut)")
                     break
-                logging.info(f"Van dang tai... lan {check_count}, con ~{remaining} phut. (end_wait={int(end_wait)}, now={int(time.time())})")
+                logging.info(f"Van dang tai... lan {check_count}, con ~{remaining} phut.")
             else:
-                # Hết 1 tiếng vẫn chưa xong → bỏ qua Step 2
-                logging.warning("Het 2 tieng van chua tai xong -> bo qua Buoc 2, chuyen thang hen lich.")
+                logging.warning("Het 2 tieng van chua tai xong -> bo qua Buoc 2.")
                 skip_step2 = True
 
-            # === XỬ LÝ VIDEO LỖI: đóng browser → xóa local → copy lại → thử lại ===
             if video_error:
                 retries = error_retry_count.get(code, 0)
                 if retries >= 2:
@@ -2055,10 +1975,9 @@ def main():
 
                 error_retry_count[code] = retries + 1
                 logging.info(f"Dong browser, xoa file loi, copy lai tu server (lan thu {retries + 1}/2)...")
-                close_browsers_gently_in_rdp()
+                close_browsers_gently_in_rdp(ch_exe)
                 rsleep("small")
 
-                # Xóa thư mục local bị lỗi
                 local_folder_err = os.path.join(LOCAL_DONE_ROOT, code)
                 try:
                     if os.path.isdir(local_folder_err):
@@ -2067,7 +1986,6 @@ def main():
                 except Exception as ex:
                     logging.warning(f"Khong xoa duoc local: {ex}")
 
-                # Copy lại: bật IPv4 → SMB → copy → tắt IPv4
                 logging.info("Bat IPv4 + SMB de copy lai...")
                 smb_connect()
                 copy_ok = ensure_local_folder(code)
@@ -2078,13 +1996,11 @@ def main():
                     logging.error(f"Copy lai tu server that bai -> bo qua ma {code}.")
                     continue
 
-                # Thêm mã này lại cuối danh sách để thử lại
                 ready_codes.append(code)
                 logging.info(f"Da them lai ma {code} vao cuoi danh sach de thu lai.")
 
-                # Mở lại browser (IPv4 đã tắt)
-                logging.info("Mo lai browser (IPv4 da tat)...")
-                open_run_and_execute(RUN_BROWSER_EXE)
+                logging.info("Mo lai browser kenh %s (IPv4 da tat)...", ch_code)
+                open_run_and_execute(ch_exe)
                 time.sleep(BROWSER_LAUNCH_WAIT_SEC)
                 first_time = True
                 continue
@@ -2093,16 +2009,15 @@ def main():
             logging.info("Khong thay doitai.png -> video da san sang, vao Buoc 2 binh thuong.")
 
         if not skip_step2:
-            handle_step2_flow(active_row)         # Bước 2 đầy đủ
+            handle_step2_flow(active_row)
         else:
-            # Bỏ qua Step 2, chỉ click "Chế độ hiển thị" để sang Step 3-4
             logging.info("Bo qua Buoc 2 -> click 'Che do hien thi' de sang hen lich...")
             wait_and_click_image(TEMPLATE_CHEDO_HIEN_THI,
                                  timeout_sec=int(r(*HUMAN.click_timeout)),
                                  confidence=r(*HUMAN.click_confidence))
             rsleep("long")
 
-        ok = handle_step3_4_flow(active_row, client, code)  # Bước 3-4
+        ok = handle_step3_4_flow(active_row, client, code)
 
         if ok == "VIDEO_ERROR":
             logging.error(f"Video loi truoc khi len lich! Xoa va copy lai ma {code}.")
@@ -2111,7 +2026,7 @@ def main():
                 logging.error(f"Ma {code} da loi {retries} lan -> BO QUA.")
                 continue
             error_retry_count[code] = retries + 1
-            close_browsers_gently_in_rdp()
+            close_browsers_gently_in_rdp(ch_exe)
             rsleep("small")
             local_folder_err = os.path.join(LOCAL_DONE_ROOT, code)
             try:
@@ -2120,7 +2035,6 @@ def main():
                     logging.info(f"Da xoa local loi: {local_folder_err}")
             except Exception:
                 pass
-            # Bật IPv4 → copy lại → tắt IPv4
             logging.info("Bat IPv4 + SMB de copy lai...")
             smb_connect()
             copy_ok = ensure_local_folder(code)
@@ -2129,8 +2043,7 @@ def main():
             if copy_ok:
                 ready_codes.append(code)
                 logging.info(f"Da them lai ma {code} de thu lai.")
-            # Mở browser (IPv4 đã tắt)
-            open_run_and_execute(RUN_BROWSER_EXE)
+            open_run_and_execute(ch_exe)
             time.sleep(BROWSER_LAUNCH_WAIT_SEC)
             first_time = True
             continue
@@ -2149,9 +2062,142 @@ def main():
         first_time = False
         continue
 
-    logging.info("Da hoan thanh %d/%d ma trong danh sach.", len(processed_codes), len(ready_codes))
-    # Pre-stage ngày mai: KHÔNG bật IPv4 ở đây vì Chrome vẫn đang mở (tải video)
-    # Phiên sau (3 tiếng) sẽ đóng Chrome → bật IPv4 → copy file ngày mai
+    logging.info("Kenh %s: da hoan thanh %d/%d ma.", ch_code, len(processed_codes), len(ready_codes))
+    return len(processed_codes)
+
+
+def main():
+    import traceback
+    random.seed()
+
+    startup_delay = random.randint(0, 180)
+    logging.info(f"Cho {startup_delay}s truoc khi bat dau (tranh nghen mang)...")
+    time.sleep(startup_delay)
+
+    # === Auto-discover kênh từ thư mục cùng cấp ===
+    channels = discover_channels()
+    if not channels:
+        channels = [{"code": CHANNEL_CODE, "exe": RUN_BROWSER_EXE, "dir": _CHANNEL_DIR}]
+        logging.info(f"Khong tim thay kenh tu thu muc -> dung config: {CHANNEL_CODE}")
+    logging.info(f"Phat hien {len(channels)} kenh: {[c['code'] for c in channels]}")
+
+    # === BƯỚC 0: Đóng browser cũ ===
+    logging.info("[0/5] Dong browser cu (neu con tu phien truoc)...")
+    close_browsers_gently_in_rdp()
+    # Kill thêm browser exe riêng của từng kênh (phiên cũ có thể còn sót)
+    exe_names = set(os.path.basename(ch["exe"]) for ch in channels)
+    if exe_names:
+        kills = " & ".join(f'taskkill /F /IM "{n}" /T 2>nul' for n in exe_names)
+        open_run_and_execute(f'cmd /c {kills}')
+    rsleep("small")
+
+    # === BƯỚC 1: Bật IPv4 + SMB ===
+    logging.info("[1/5] Ket noi SMB may chu (bat IPv4)...")
+    smb_connect()
+
+    # === BƯỚC 2: Lấy dữ liệu Google Sheets ===
+    logging.info("[2/5] Tai du lieu Google Sheets (qua IPv4)...")
+    client = None
+    input_rows = None
+    try:
+        client = gs_client()
+        input_rows = get_rows(client, INPUT_SHEET)
+        logging.info(f"[2/5] Da doc {len(input_rows)} dong tu sheet '{INPUT_SHEET}'.")
+
+        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
+        with open(_cache_path, "w", encoding="utf-8") as f:
+            json.dump(input_rows, f, ensure_ascii=False)
+        logging.info("[2/5] Da luu cache JSON local.")
+    except Exception as e:
+        logging.warning(f"[2/5] Khong doc duoc Sheets qua IPv4: {e}")
+        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
+        if os.path.isfile(_cache_path):
+            with open(_cache_path, "r", encoding="utf-8") as f:
+                input_rows = json.load(f)
+            logging.info(f"[2/5] Dung cache cu ({len(input_rows)} dong).")
+        else:
+            logging.error("[2/5] Khong co cache -> khong the tiep tuc.")
+            smb_disconnect()
+            return
+
+    import threading
+    logging.info("[2/5] Don ma da dang (toi da 90s)...")
+    cleanup_thread = threading.Thread(target=cleanup_posted_codes, daemon=True)
+    cleanup_thread.start()
+    cleanup_thread.join(timeout=90)
+    if cleanup_thread.is_alive():
+        logging.warning("[2/5] cleanup treo qua 90s -> bo qua.")
+
+    # === BƯỚC 3: Chuẩn bị dữ liệu cho TẤT CẢ kênh ===
+    channel_tasks = []
+    total_codes = 0
+
+    for ch in channels:
+        ch_code = ch["code"]
+        ready_codes = get_all_ready_codes(input_rows, ch_code)
+        if not ready_codes:
+            logging.info(f"Kenh {ch_code}: khong co ma thoa dieu kien hom nay.")
+            pre_stage_tomorrow(input_rows, ch_code)
+            continue
+
+        filtered = []
+        for c in ready_codes:
+            if has_required_files(os.path.join(LOCAL_DONE_ROOT, c)):
+                filtered.append(c)
+            elif has_required_files(os.path.join(SERVER_DONE_ROOT, c)):
+                filtered.append(c)
+            else:
+                logging.warning("Kenh %s: bo ma %s (thieu bo o ca local & server).", ch_code, c)
+
+        if not filtered:
+            logging.info(f"Kenh {ch_code}: khong con ma hop le sau khi kiem tra thu muc.")
+            pre_stage_tomorrow(input_rows, ch_code)
+            continue
+
+        logging.info(f"[3/5] Kenh {ch_code}: copy {len(filtered)} ma tu may chu...")
+        for c in filtered:
+            try:
+                ensure_local_folder(c)
+            except Exception as e:
+                logging.warning(f"Prestage loi {c} (kenh {ch_code}): {e}")
+
+        channel_tasks.append((ch, filtered))
+        total_codes += len(filtered)
+
+    if not channel_tasks:
+        logging.info("Khong co kenh nao co ma can dang. Ngat SMB.")
+        smb_disconnect()
+        return
+
+    logging.info(f"[3/5] Tong cong {len(channel_tasks)} kenh, {total_codes} ma can dang.")
+
+    # === BƯỚC 4: Tắt SMB + IPv4 ===
+    logging.info("[4/5] Ngat SMB, tat IPv4. Tu day dung du lieu local + IPv6.")
+    smb_disconnect()
+
+    # === BƯỚC 5: Đăng video cho TỪNG KÊNH ===
+    total_posted = 0
+    for ch_idx, (ch, ready_codes) in enumerate(channel_tasks, 1):
+        ch_code = ch["code"]
+        ch_exe = ch["exe"]
+        logging.info(f"{'='*60}")
+        logging.info(f"KENH {ch_idx}/{len(channel_tasks)}: {ch_code} | {len(ready_codes)} ma")
+        logging.info(f"{'='*60}")
+
+        # Đóng browser cũ (kênh trước) trước khi mở kênh mới
+        close_browsers_gently_in_rdp(ch_exe)
+        rsleep("small")
+
+        posted = post_channel(ch, ready_codes, input_rows, client)
+        total_posted += posted
+
+        # Đóng browser kênh này trước khi chuyển sang kênh tiếp
+        if ch_idx < len(channel_tasks):
+            logging.info(f"Dong browser kenh {ch_code} truoc khi chuyen sang kenh tiep...")
+            close_browsers_gently_in_rdp(ch_exe)
+            rsleep("small")
+
+    logging.info(f"Da hoan thanh tat ca: {total_posted} ma tren {len(channel_tasks)} kenh.")
 
 
 if __name__ == "__main__":
