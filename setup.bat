@@ -32,6 +32,7 @@ timeout /t 8 /nobreak >nul
 
 REM Xoa file .pth loi (neu co)
 if exist "%~dp0python\Lib\site-packages\distutils-precedence.pth" del /f "%~dp0python\Lib\site-packages\distutils-precedence.pth" >nul 2>&1
+if exist "%~dp0python\Lib\site-packages\pywin32.pth" del /f "%~dp0python\Lib\site-packages\pywin32.pth" >nul 2>&1
 
 REM Thu ensurepip truoc
 "%PY%" -m ensurepip --default-pip >nul 2>&1

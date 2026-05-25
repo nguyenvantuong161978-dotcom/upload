@@ -9,6 +9,10 @@ if exist "update_new.bat" (
     del "update_new.bat" >nul 2>&1
 )
 
+REM Xoa file .pth loi truoc khi chay Python
+if exist "%~dp0python\Lib\site-packages\distutils-precedence.pth" del /f "%~dp0python\Lib\site-packages\distutils-precedence.pth" >nul 2>&1
+if exist "%~dp0python\Lib\site-packages\pywin32.pth" del /f "%~dp0python\Lib\site-packages\pywin32.pth" >nul 2>&1
+
 echo ============================================
 echo   DANG KHOI DONG TOOL...
 echo ============================================
