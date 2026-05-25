@@ -600,6 +600,7 @@ def _disable_ipv4():
 
 def smb_connect():
     """Kết nối SMB drive. Bật IPv4 nếu cần (dùng IPv4 SMB)."""
+    global SERVER_DONE_ROOT
     if not SMB_SERVER:
         return True
     try:
@@ -620,7 +621,9 @@ def smb_connect():
             logging.warning(f"SMB lan {attempt}/3 loi: {result.stderr.strip()}")
             time.sleep(10)
         if result.returncode == 0:
+            SERVER_DONE_ROOT = os.path.join(SMB_DRIVE + os.sep, "AUTO", "done")
             logging.info(f"SMB ket noi OK: {SMB_DRIVE} -> {SMB_SERVER}")
+            logging.info(f"SERVER_DONE_ROOT={SERVER_DONE_ROOT}")
             return True
         else:
             logging.error(f"SMB that bai sau 3 lan! Khong dung tsclient.")
