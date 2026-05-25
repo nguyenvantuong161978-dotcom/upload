@@ -90,6 +90,11 @@ if exist "%SRC_DIR%\DIEU_KHIEN.bat" (
     echo   [OK] DIEU_KHIEN.bat
 )
 
+if exist "%SRC_DIR%\setup.bat" (
+    copy /y "%SRC_DIR%\setup.bat" "%~dp0setup.bat" >nul
+    echo   [OK] setup.bat
+)
+
 if exist "%SRC_DIR%\VERSION" (
     copy /y "%SRC_DIR%\VERSION" "%~dp0VERSION" >nul
     for /f "delims=" %%V in ("%SRC_DIR%\VERSION") do echo   [OK] VERSION: %%V
