@@ -61,34 +61,49 @@ with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
     CFG = json.load(_f)
 
 # Tự nhận diện từ vị trí dang.py:
-# C:\Users\{user}\Documents\{CHANNEL_CODE}\upload\dang.py
+# D:\{GROUP}\upload\dang.py   (GROUP = KA, TH, MT...)
+# D:\{GROUP}\{CHANNEL}\{CHANNEL}.exe
 _UPLOAD_DIR    = os.path.dirname(os.path.abspath(__file__))        # ...\upload
-_CHANNEL_DIR   = os.path.dirname(_UPLOAD_DIR)                      # ...\{CHANNEL_CODE}
-_AUTO_CHANNEL  = os.path.basename(_CHANNEL_DIR)                    # CHANNEL_CODE
+_GROUP_DIR     = os.path.dirname(_UPLOAD_DIR)                      # ...\{GROUP}
+_GROUP_CODE    = os.path.basename(_GROUP_DIR)                      # KA, TH, MT...
 _USER_HOME     = os.path.expanduser("~")                           # C:\Users\{user}
 
-CHANNEL_CODE      = CFG.get("CHANNEL_CODE", _AUTO_CHANNEL)
-RUN_BROWSER_EXE   = CFG.get("RUN_BROWSER_EXE", os.path.join(_CHANNEL_DIR, f"{_AUTO_CHANNEL}.exe"))
+# Bảng ánh xạ: tên group → IP máy chủ SMB
+SERVER_MAP = {
+    "KA": r"\\192.168.88.254\D",
+    "TH": r"\\192.168.88.178\D",
+    "MT": r"\\192.168.88.183\D",
+}
+
+# Backward-compat aliases
+_CHANNEL_DIR   = _GROUP_DIR
+_AUTO_CHANNEL  = _GROUP_CODE
+
+# Auto-detect từ tên thư mục cha, config.json override nếu có
+_auto_smb = SERVER_MAP.get(_GROUP_CODE, "")
+CHANNEL_CODE      = CFG.get("CHANNEL_CODE", _GROUP_CODE)
+RUN_BROWSER_EXE   = CFG.get("RUN_BROWSER_EXE", os.path.join(_GROUP_DIR, f"{_GROUP_CODE}.exe"))
 LOCAL_DONE_ROOT   = CFG.get("LOCAL_DONE_ROOT", os.path.join(_USER_HOME, "Desktop", "done"))
 SERVER_DONE_ROOT  = CFG.get("SERVER_DONE_ROOT", r"\\tsclient\D\AUTO\done")
 
-# SMB — bật IPv4 khi kết nối (nếu cần), tắt khi ngắt
-SMB_SERVER = CFG.get("SMB_SERVER", "")
-SMB_USER   = CFG.get("SMB_USER", "")
-SMB_PASS   = CFG.get("SMB_PASS", "")
+# SMB — auto-detect IP từ GROUP, config override nếu có
+SMB_SERVER = CFG.get("SMB_SERVER", _auto_smb)
+SMB_USER   = CFG.get("SMB_USER", "smbuser")
+SMB_PASS   = CFG.get("SMB_PASS", "159753")
 SMB_DRIVE  = CFG.get("SMB_DRIVE", "Z:")
-NEED_IPV4_TOGGLE = CFG.get("NEED_IPV4_TOGGLE", True)  # False nếu dùng IPv6
+NEED_IPV4_TOGGLE = CFG.get("NEED_IPV4_TOGGLE", True)
 UPLOAD_URL        = "https://www.youtube.com/upload"
 
-# Google Sheets — hỗ trợ cả tên field cũ và mới
-SPREADSHEET_NAME  = CFG.get("SPREADSHEET_NAME", "")
+# Google Sheets — auto-detect tên sheet từ GROUP
+SPREADSHEET_NAME  = CFG.get("SPREADSHEET_NAME", _GROUP_CODE)
 INPUT_SHEET       = CFG.get("INPUT_SHEET", CFG.get("SHEET_NAME", "INPUT"))
 SOURCE_SHEET      = CFG.get("SOURCE_SHEET", "NGUON")
 CREDENTIAL_PATH   = CFG.get("CREDENTIAL_PATH", "creds.json")
 STATUS_OK         = CFG.get("STATUS_OK", "EDIT XONG")
 STATUS_COL        = CFG.get("STATUS_COL", 48)
 
-logging.info(f"Config: CHANNEL={CHANNEL_CODE}, SHEET={SPREADSHEET_NAME}, BROWSER={RUN_BROWSER_EXE}")
+logging.info(f"Config: GROUP={_GROUP_CODE}, SMB={SMB_SERVER}, SHEET={SPREADSHEET_NAME}")
+logging.info(f"Config: Channels se duoc tu dong phat hien tu thu muc cung cap.")
 
 # Đường dẫn thư mục video
 BASE_DIR          = os.path.dirname(os.path.abspath(__file__))
