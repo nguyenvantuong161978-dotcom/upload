@@ -16,8 +16,10 @@ echo ============================================
 
 REM Bat IPv4
 powershell -Command "Get-NetAdapter | ForEach-Object { Enable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }" >nul 2>&1
+REM Dat DNS Google de phan giai duoc github.com
+powershell -Command "Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('8.8.8.8','8.8.4.4') -ErrorAction SilentlyContinue }" >nul 2>&1
 echo Cho mang on dinh...
-timeout /t 5 /nobreak >nul
+timeout /t 8 /nobreak >nul
 
 REM Tai ZIP tu GitHub
 set "GITHUB_URL=https://github.com/nguyenvantuong161978-dotcom/upload/archive/refs/heads/main.zip"
