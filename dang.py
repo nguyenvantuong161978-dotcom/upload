@@ -71,7 +71,7 @@ _USER_HOME     = os.path.expanduser("~")                           # C:\Users\{u
 # Bảng ánh xạ: tên group → IP máy chủ SMB
 SERVER_MAP = {
     "KA": r"\\192.168.88.254\D",
-    "TH": r"\\192.168.88.178\D",
+    "TH": r"\\192.168.88.41\D",
     "MT": r"\\192.168.88.183\D",
 }
 
