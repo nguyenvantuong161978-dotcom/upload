@@ -1,0 +1,6 @@
+# File .bat PHAI giu line-ending CRLF nguyen byte.
+# Windows cmd.exe parse hong neu .bat la LF. Coi nhu binary de git KHONG tu doi (autocrlf).
+*.bat -text
+
+# Python giu LF cho gon
+*.py text eol=lf

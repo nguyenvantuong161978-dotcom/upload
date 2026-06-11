@@ -1,13 +1,16 @@
-# Chi push cmt.py, dang.py, run.bat, icon/
-# Ignore tat ca truoc, roi cho phep tung file
+# Chi push code + icon. Ignore tat ca truoc, roi cho phep tung file.
+# KHONG push secret: client_secret.json, creds.json, config.json, clients/, tokens/, ...
 
 *
 !.gitignore
+!.gitattributes
+!VERSION
 !cmt.py
 !dang.py
 !run.bat
 !update.bat
 !setup.bat
+!lay_token.bat
 !config.example.json
 !icon/
 !icon/**

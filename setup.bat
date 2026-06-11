@@ -58,6 +58,7 @@ if errorlevel 1 goto :fail
     google-auth ^
     google-auth-oauthlib ^
     google-auth-httplib2 ^
+    DrissionPage ^
     httplib2 ^
     certifi ^
     youtube-transcript-api ^

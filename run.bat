@@ -21,5 +21,8 @@ echo.
 REM Chay dang.py (dang video)
 start "Dang Video" python\python.exe "%~dp0dang.py"
 
+REM Chay cmt.py (tra loi binh luan - tu quet tokens, kenh nao co token thi chay)
+start "Tra Loi Comment" python\python.exe "%~dp0cmt.py"
+
 echo Cac script da duoc khoi dong thanh cong!
 exit /b

@@ -70,29 +70,14 @@ if exist "%SRC_DIR%\run.bat" (
     echo   [OK] run.bat
 )
 
-if exist "%SRC_DIR%\watchdog.py" (
-    copy /y "%SRC_DIR%\watchdog.py" "%~dp0watchdog.py" >nul
-    echo   [OK] watchdog.py
-)
-
-if exist "%SRC_DIR%\control.bat" (
-    copy /y "%SRC_DIR%\control.bat" "%~dp0control.bat" >nul
-    echo   [OK] control.bat
-)
-
-if exist "%SRC_DIR%\control.py" (
-    copy /y "%SRC_DIR%\control.py" "%~dp0control.py" >nul
-    echo   [OK] control.py
-)
-
-if exist "%SRC_DIR%\DIEU_KHIEN.bat" (
-    copy /y "%SRC_DIR%\DIEU_KHIEN.bat" "%~dp0DIEU_KHIEN.bat" >nul
-    echo   [OK] DIEU_KHIEN.bat
-)
-
 if exist "%SRC_DIR%\setup.bat" (
     copy /y "%SRC_DIR%\setup.bat" "%~dp0setup.bat" >nul
     echo   [OK] setup.bat
+)
+
+if exist "%SRC_DIR%\lay_token.bat" (
+    copy /y "%SRC_DIR%\lay_token.bat" "%~dp0lay_token.bat" >nul
+    echo   [OK] lay_token.bat
 )
 
 if exist "%SRC_DIR%\VERSION" (
