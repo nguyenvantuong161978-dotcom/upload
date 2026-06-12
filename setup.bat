@@ -10,6 +10,12 @@ chcp 65001 >nul 2>&1
 title Cai thu vien Tool Upload [ADMIN]
 cd /d "%~dp0"
 
+REM Tao san cac thu muc cmt can (clients de bo file .json client vao)
+if not exist "%~dp0clients" mkdir "%~dp0clients"
+if not exist "%~dp0tokens" mkdir "%~dp0tokens"
+if not exist "%~dp0replied" mkdir "%~dp0replied"
+if not exist "%~dp0transcripts" mkdir "%~dp0transcripts"
+
 set "PY=%~dp0python\python.exe"
 
 if not exist "%PY%" (
