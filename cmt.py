@@ -68,7 +68,7 @@ GEMINI_API_KEYS = []       # NHIEU key (moi browser/account 1 key) -> xoay vong 
 # luc setup moi kenh: tu tao 1 Gemini key (click CHUOT THAT) cho account do, gom lai.
 # Moi account chi tao 1 lan -> sach (Google chi chan khi 1 account tao key nhieu lan lien tiep).
 GEMINI_AUTOKEY = True
-GEMINI_KEY_CHANNELS = []    # cac kenh DA lay duoc Gemini key -> lan sau bo qua
+GEMINI_KEY_CHANNELS = []    # chrome (kenh) DA lay key -> bo qua, moi chrome chi lay 1 lan
 try:
     with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as _cf:
         _cfg_cmt = json.load(_cf)
@@ -895,15 +895,15 @@ def collect_gemini_keys():
     channels = discover_channels()
     if not channels:
         return
-    done = set(GEMINI_KEY_CHANNELS)               # kenh DA co key -> bo qua
+    done = set(GEMINI_KEY_CHANNELS)               # chrome DA lay key -> bo qua (moi chrome chi 1 lan)
     todo = [ch for ch in channels if ch not in done]
     have = set(_all_gemini_keys())
     if not todo:
-        print(f"\n🔑 Tat ca {len(channels)} kenh DA co Gemini key -> bo qua het.")
+        print(f"\n🔑 Tat ca {len(channels)} chrome DA co Gemini key -> bo qua.")
         return
-    print(f"\n🔑 ===== LAY GEMINI KEY: {len(todo)} kenh CHUA co (bo qua {len(done)} da co) =====")
-    print("   Voi MOI browser mo ra: tu tao 1 key (Create API key -> chon/tao project -> Create key).")
-    print("   Tool tu nhan key -> dong browser -> sang browser tiep theo.")
+    print(f"\n🔑 ===== LAY GEMINI KEY: {len(todo)} chrome CHUA co (bo qua {len(done)} da co) =====")
+    print("   Moi chrome (= 1 gmail) tu tao 1 key (Create API key -> chon/tao project -> Create key).")
+    print("   Tool tu nhan key -> dong chrome -> sang chrome tiep theo. Chrome da co key thi bo qua.")
     from DrissionPage import Chromium
     for ch in todo:
         browser_exe = channel_browser_exe(ch)
