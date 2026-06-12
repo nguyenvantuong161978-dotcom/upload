@@ -81,23 +81,29 @@ def token_path(channel):
 
 
 def client_secret_path(channel):
-    """Client_secret cho kenh, uu tien:
-    1) clients/<kenh>.json  -> RIENG kenh nay (uu tien tuyet doi)
-    2) Bat ky file .json khac trong clients/ -> client DUNG CHUNG (ten tuy y, tai ve sao cung duoc),
-       chi bo qua file mang ten KENH KHAC (<kenh khac>.json).
-    3) client_secret.json   (legacy)"""
-    p = os.path.join(CLIENTS_DIR, f"{channel}.json")
-    if os.path.isfile(p):
-        return p
-    # Ten file = ma cua 1 kenh KHAC thi bo qua (de khong lay nham client rieng cua kenh do)
-    other_channel_files = {f"{c}.json".lower() for c in discover_channels() if c != channel}
+    """Client_secret cho kenh. Tra None neu KHONG co client phu hop (KHONG fallback client_secret.json cu).
+    1) clients/<kenh>.json            -> RIENG kenh nay (uu tien tuyet doi)
+    2) clients/ chi co DUNG 1 file .json -> dung CHUNG cho moi kenh (ten gi cung duoc)
+    3) Nhieu file -> dung file .json KHONG trung ten kenh nao (client chung)."""
     try:
-        for name in sorted(os.listdir(CLIENTS_DIR)):
-            if name.lower().endswith(".json") and name.lower() not in other_channel_files:
-                return os.path.join(CLIENTS_DIR, name)
+        files = [n for n in sorted(os.listdir(CLIENTS_DIR)) if n.lower().endswith(".json")]
     except Exception:
-        pass
-    return CLIENT_SECRET_FILE
+        files = []
+
+    # 1) Trung dung ten kenh
+    exact = f"{channel}.json".lower()
+    for n in files:
+        if n.lower() == exact:
+            return os.path.join(CLIENTS_DIR, n)
+    # 2) Chi 1 file -> client dung chung
+    if len(files) == 1:
+        return os.path.join(CLIENTS_DIR, files[0])
+    # 3) Nhieu file -> file khong trung ten kenh nao (client chung)
+    channel_files = {f"{c}.json".lower() for c in discover_channels()}
+    for n in files:
+        if n.lower() not in channel_files:
+            return os.path.join(CLIENTS_DIR, n)
+    return None
 
 
 def channel_browser_exe(channel):
@@ -176,6 +182,45 @@ def _click_contains(page, words, timeout=0.6):
                         return True
                     except Exception:
                         pass
+    return False
+
+
+def _safe_click(el):
+    """Click 1 element, thu ca by_js. True neu click duoc."""
+    try:
+        el.click()
+        return True
+    except Exception:
+        try:
+            el.click(by_js=True)
+            return True
+        except Exception:
+            return False
+
+
+def _pick_account(tab):
+    """Chon tai khoan tren man 'Choose an account':
+    1) Uu tien tai khoan THUONG HIEU (co 'YouTube', khong @).
+    2) Neu khong co (tai khoan chi 1 kenh) -> chon tai khoan Gmail thuong (co @),
+       bo qua 'Use another account'.
+    True neu da chon duoc."""
+    try:
+        lis = list(tab.eles("tag:li", timeout=0.5))
+    except Exception:
+        lis = []
+    # Pass 1: brand account (YouTube, khong @)
+    for li in lis:
+        t = (getattr(li, "text", "") or "")
+        if "youtube" in t.lower() and "@" not in t:
+            if _safe_click(li):
+                return True
+    # Pass 2: tai khoan gmail thuong (co @), bo qua 'use another account'
+    for li in lis:
+        t = (getattr(li, "text", "") or "")
+        tl = t.lower()
+        if "@" in t and "another account" not in tl and "tài khoản khác" not in tl:
+            if _safe_click(li):
+                return True
     return False
 
 
@@ -259,25 +304,10 @@ def _auto_consent(browser, redirect_host, timeout=180):
             time.sleep(1.2)
             continue
 
-        # === Man CHON TAI KHOAN -> chon dong kenh (co chu 'YouTube', khong phai @gmail) ===
-        picked = False
-        try:
-            for li in tab.eles("tag:li", timeout=0.5):
-                t = li.text or ""
-                if "youtube" in t.lower() and "@" not in t:
-                    try:
-                        li.click()
-                    except Exception:
-                        try:
-                            li.click(by_js=True)
-                        except Exception:
-                            pass
-                    picked = True
-                    time.sleep(3)
-                    break
-        except Exception:
-            pass
-        if picked:
+        # === Man CHON TAI KHOAN ===
+        # Uu tien tai khoan thuong hieu (YouTube); neu tai khoan chi 1 kenh -> chon Gmail thuong.
+        if _pick_account(tab):
+            time.sleep(3)
             continue
 
         time.sleep(1.5)
@@ -293,8 +323,9 @@ def setup_channel(channel):
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"  # cho phep redirect http://localhost
 
     client_file = client_secret_path(channel)
-    if not os.path.isfile(client_file):
-        print(f"❌ Khong tim thay client_secret cho kenh {channel}: clients/{channel}.json")
+    if not client_file or not os.path.isfile(client_file):
+        print(f"❌ {channel}: KHONG co file client trong clients/. "
+              f"Bo 1 file .json (OAuth client da Publish) vao clients/ roi chay lai.")
         return
 
     browser_exe = channel_browser_exe(channel)
