@@ -62,13 +62,18 @@ REPLY_RETRY_WAIT = 5      # giay cho giua moi lan retry
 # Du phong: Gemini (mien phi, chay qua IPv6) khi pool loi.
 # KEY doc tu config.json -> KHONG hardcode/push GitHub (key lo se bi Google ban!).
 # Lay key mien phi tai: https://aistudio.google.com/apikey  -> bo vao config.json: "GEMINI_API_KEY": "..."
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_API_KEY = ""
+# luc setup: tu tao Gemini key (click chuot that) neu config chua co.
+# Mac dinh FALSE: da so account kenh (moi/han che) khong tao duoc key ('No Cloud Projects').
+# Chi bat (=true) neu account browser la loai DA co Cloud/Gemini project.
+GEMINI_AUTOKEY = False
 try:
     with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as _cf:
         _cfg_cmt = json.load(_cf)
     GEMINI_API_KEY = _cfg_cmt.get("GEMINI_API_KEY", "")
     GEMINI_MODEL = _cfg_cmt.get("GEMINI_MODEL", GEMINI_MODEL)
+    GEMINI_AUTOKEY = _cfg_cmt.get("GEMINI_AUTOKEY", True)
 except Exception:
     pass
 
@@ -328,6 +333,103 @@ def _auto_consent(browser, redirect_host, timeout=180):
     return _redirected(browser, redirect_host)
 
 
+def _real_click(ele):
+    """Click element bang CHUOT THAT (PyAutoGUI) tai toa do man hinh cua no.
+    isTrusted=true nhu nguoi -> tranh bot detection cua Google (CDP click bi chan)."""
+    try:
+        import pyautogui
+        x, y = ele.rect.screen_midpoint
+        pyautogui.moveTo(int(x), int(y), duration=0.5)
+        time.sleep(0.3)
+        pyautogui.click()
+        return True
+    except Exception as e:
+        print(f"   real_click loi: {e}")
+        return False
+
+
+def _save_gemini_to_config(key):
+    """Luu Gemini key vao config.json (gitignored, khong push)."""
+    cfg_path = os.path.join(BASE_DIR, "config.json")
+    try:
+        cfg = {}
+        if os.path.isfile(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+        cfg["GEMINI_API_KEY"] = key
+        cfg.setdefault("GEMINI_MODEL", GEMINI_MODEL)
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"   ⚠️ Luu key vao config.json loi: {e}")
+        return False
+
+
+def _create_gemini_key(browser):
+    """Tu tao 1 Gemini API key qua AI Studio bang CLICK CHUOT THAT (tranh Google chan bot).
+    Browser dang dang nhap Google. Tra key 'AQ...' hoac None."""
+    try:
+        import pyautogui, ctypes
+        ctypes.windll.user32.SetProcessDPIAware()
+        pyautogui.FAILSAFE = False
+    except Exception:
+        return None
+    try:
+        tab = browser.latest_tab
+        tab.get("https://aistudio.google.com/apikey")
+        time.sleep(7)
+        try:
+            tab.set.window.full()   # fullscreen -> click chuot khong bi cua so khac che
+            tab.set.activate()
+        except Exception:
+            pass
+        time.sleep(2)
+
+        # Man 'Welcome' (terms): tick checkbox + Continue (CDP du cho buoc nay)
+        try:
+            cbs = tab.eles("css:input[type=checkbox]", timeout=2)
+            if cbs:
+                try:
+                    cbs[0].click()
+                except Exception:
+                    pass
+                time.sleep(1)
+                _click_contains(tab, ["Continue"])
+                time.sleep(3)
+        except Exception:
+            pass
+
+        # Click 'Create API key' (chuot that)
+        clicked = False
+        for e in tab.eles("tag:button", timeout=3):
+            if "create api key" in (e.text or "").lower():
+                clicked = _real_click(e)
+                break
+        if not clicked:
+            return None
+        time.sleep(5)
+
+        # Click 'Create key' trong dialog (chuot that - buoc nhay cam, BAT BUOC)
+        clicked = False
+        for e in tab.eles("tag:button", timeout=3):
+            if (e.text or "").strip().lower() == "create key":
+                clicked = _real_click(e)
+                break
+        if not clicked:
+            return None
+        time.sleep(9)
+
+        if "suspicious" in tab.html.lower():
+            print("   ⚠️ Google bao 'suspicious' -> chua tao duoc (thu lai/tao tay).")
+            return None
+        keys = sorted(set(re.findall(r"AQ\.[A-Za-z0-9_\-]{30,}", tab.html)), key=len, reverse=True)
+        return keys[0] if keys else None
+    except Exception as e:
+        print(f"   ⚠️ Tao Gemini key loi: {str(e)[:120]}")
+        return None
+
+
 def setup_channel(channel):
     """Tao token cho 1 kenh — DrissionPage dieu khien browser kenh, tu click qua OAuth."""
     import wsgiref.simple_server
@@ -409,6 +511,17 @@ def setup_channel(channel):
     flow.fetch_token(authorization_response=_App.last_uri)
     save_credentials(channel, flow.credentials)
     print(f"✅ Da luu token: {token_path(channel)}")
+
+    # Tu tao Gemini key du phong (1 lan, neu config chua co) - bang CLICK CHUOT THAT
+    global GEMINI_API_KEY
+    if GEMINI_AUTOKEY and not GEMINI_API_KEY:
+        print("🔑 Tu tao Gemini key du phong (click chuot that, tranh bot detect)...")
+        _gk = _create_gemini_key(browser)
+        if _gk and _save_gemini_to_config(_gk):
+            GEMINI_API_KEY = _gk
+            print(f"   ✅ Da tao + luu Gemini key ({_gk[:10]}...). Du phong khi pool loi.")
+        else:
+            print("   ⚠️ Chua tao duoc Gemini key tu dong (co the tao tay sau).")
 
     # TU DONG dong browser cua kenh sau khi lay token (taskkill thang, tranh DrissionPage treo)
     time.sleep(1)
