@@ -68,11 +68,13 @@ GEMINI_API_KEYS = []       # NHIEU key (moi browser/account 1 key) -> xoay vong 
 # luc setup moi kenh: tu tao 1 Gemini key (click CHUOT THAT) cho account do, gom lai.
 # Moi account chi tao 1 lan -> sach (Google chi chan khi 1 account tao key nhieu lan lien tiep).
 GEMINI_AUTOKEY = True
+GEMINI_KEY_CHANNELS = []    # cac kenh DA lay duoc Gemini key -> lan sau bo qua
 try:
     with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as _cf:
         _cfg_cmt = json.load(_cf)
     GEMINI_API_KEY = _cfg_cmt.get("GEMINI_API_KEY", "")
     GEMINI_API_KEYS = list(_cfg_cmt.get("GEMINI_API_KEYS", []))
+    GEMINI_KEY_CHANNELS = list(_cfg_cmt.get("GEMINI_KEY_CHANNELS", []))
     GEMINI_MODEL = _cfg_cmt.get("GEMINI_MODEL", GEMINI_MODEL)
     GEMINI_AUTOKEY = _cfg_cmt.get("GEMINI_AUTOKEY", True)
 except Exception:
@@ -358,8 +360,8 @@ def _real_click(ele):
         return False
 
 
-def _save_gemini_to_config(key):
-    """Them key vao GEMINI_API_KEYS trong config.json (gitignored). Khong trung."""
+def _save_gemini_to_config(key, channel=None):
+    """Them key vao GEMINI_API_KEYS + danh dau kenh da lay (GEMINI_KEY_CHANNELS). Khong trung."""
     cfg_path = os.path.join(BASE_DIR, "config.json")
     try:
         cfg = {}
@@ -370,6 +372,11 @@ def _save_gemini_to_config(key):
         if key not in keys:
             keys.append(key)
         cfg["GEMINI_API_KEYS"] = keys
+        if channel:
+            chs = list(cfg.get("GEMINI_KEY_CHANNELS", []))
+            if channel not in chs:
+                chs.append(channel)
+            cfg["GEMINI_KEY_CHANNELS"] = chs
         cfg.setdefault("GEMINI_MODEL", GEMINI_MODEL)
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
@@ -888,12 +895,17 @@ def collect_gemini_keys():
     channels = discover_channels()
     if not channels:
         return
+    done = set(GEMINI_KEY_CHANNELS)               # kenh DA co key -> bo qua
+    todo = [ch for ch in channels if ch not in done]
     have = set(_all_gemini_keys())
-    print(f"\n🔑 ===== LAY GEMINI KEY ({len(channels)} browser) - DU PHONG KHI POOL LOI =====")
+    if not todo:
+        print(f"\n🔑 Tat ca {len(channels)} kenh DA co Gemini key -> bo qua het.")
+        return
+    print(f"\n🔑 ===== LAY GEMINI KEY: {len(todo)} kenh CHUA co (bo qua {len(done)} da co) =====")
     print("   Voi MOI browser mo ra: tu tao 1 key (Create API key -> chon/tao project -> Create key).")
     print("   Tool tu nhan key -> dong browser -> sang browser tiep theo.")
     from DrissionPage import Chromium
-    for ch in channels:
+    for ch in todo:
         browser_exe = channel_browser_exe(ch)
         if not os.path.isfile(browser_exe):
             continue
@@ -907,19 +919,19 @@ def collect_gemini_keys():
             key = _create_gemini_key(browser)
         except Exception as e:
             print(f"   ⚠️ {ch}: loi {str(e)[:80]}")
-        if key and key not in have:
-            _save_gemini_to_config(key)
+        if key:
+            _save_gemini_to_config(key, ch)      # luu key + danh dau kenh DA xong
             have.add(key)
-            print(f"   ✅ {ch}: da lay key ({key[:10]}...). Pool: {len(have)} key.")
-        elif key:
-            print("   (key trung, bo qua)")
+            print(f"   ✅ {ch}: da lay key ({key[:10]}...). Tong {len(have)} key.")
+        else:
+            print(f"   ⚠️ {ch}: CHUA lay duoc key -> chay lai se thu lai DUNG kenh nay (kenh xong da bo qua).")
         try:
             subprocess.run(f'taskkill /F /IM "{os.path.basename(browser_exe)}" /T',
                            shell=True, capture_output=True)
         except Exception:
             pass
         time.sleep(2)
-    print(f"\n🔑 ===== XONG: pool co {len(have)} Gemini key dung chung =====")
+    print(f"\n🔑 ===== XONG: tong {len(have)} Gemini key dung chung =====")
 
 
 def setup_all_channels():
