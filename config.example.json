@@ -11,7 +11,7 @@
     "STATUS_OK": "EDIT XONG",
     "STATUS_COL": 48,
 
-    "GEMINI_API_KEY": "",
+    "GEMINI_API_KEYS": [],
     "GEMINI_MODEL": "gemini-2.5-flash",
-    "GEMINI_AUTOKEY": false
+    "GEMINI_AUTOKEY": true
 }

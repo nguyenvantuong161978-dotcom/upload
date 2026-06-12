@@ -63,19 +63,29 @@ REPLY_RETRY_WAIT = 5      # giay cho giua moi lan retry
 # KEY doc tu config.json -> KHONG hardcode/push GitHub (key lo se bi Google ban!).
 # Lay key mien phi tai: https://aistudio.google.com/apikey  -> bo vao config.json: "GEMINI_API_KEY": "..."
 GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_API_KEY = ""
-# luc setup: tu tao Gemini key (click chuot that) neu config chua co.
-# Mac dinh FALSE: da so account kenh (moi/han che) khong tao duoc key ('No Cloud Projects').
-# Chi bat (=true) neu account browser la loai DA co Cloud/Gemini project.
-GEMINI_AUTOKEY = False
+GEMINI_API_KEY = ""        # 1 key (tuong thich cu)
+GEMINI_API_KEYS = []       # NHIEU key (moi browser/account 1 key) -> xoay vong chia quota
+# luc setup moi kenh: tu tao 1 Gemini key (click CHUOT THAT) cho account do, gom lai.
+# Moi account chi tao 1 lan -> sach (Google chi chan khi 1 account tao key nhieu lan lien tiep).
+GEMINI_AUTOKEY = True
 try:
     with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as _cf:
         _cfg_cmt = json.load(_cf)
     GEMINI_API_KEY = _cfg_cmt.get("GEMINI_API_KEY", "")
+    GEMINI_API_KEYS = list(_cfg_cmt.get("GEMINI_API_KEYS", []))
     GEMINI_MODEL = _cfg_cmt.get("GEMINI_MODEL", GEMINI_MODEL)
     GEMINI_AUTOKEY = _cfg_cmt.get("GEMINI_AUTOKEY", True)
 except Exception:
     pass
+
+
+def _all_gemini_keys():
+    """Tat ca Gemini key co (list + key le), bo trung."""
+    keys = []
+    for k in (GEMINI_API_KEYS + [GEMINI_API_KEY]):
+        if k and k not in keys:
+            keys.append(k)
+    return keys
 
 # Ngon ngu reply theo hau to kenh -T<n> (vd TL1-T1 / TH2-T1 -> Spanish)
 LANG_MAP = {
@@ -349,14 +359,17 @@ def _real_click(ele):
 
 
 def _save_gemini_to_config(key):
-    """Luu Gemini key vao config.json (gitignored, khong push)."""
+    """Them key vao GEMINI_API_KEYS trong config.json (gitignored). Khong trung."""
     cfg_path = os.path.join(BASE_DIR, "config.json")
     try:
         cfg = {}
         if os.path.isfile(cfg_path):
             with open(cfg_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-        cfg["GEMINI_API_KEY"] = key
+        keys = list(cfg.get("GEMINI_API_KEYS", []))
+        if key not in keys:
+            keys.append(key)
+        cfg["GEMINI_API_KEYS"] = keys
         cfg.setdefault("GEMINI_MODEL", GEMINI_MODEL)
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
@@ -366,67 +379,35 @@ def _save_gemini_to_config(key):
         return False
 
 
-def _create_gemini_key(browser):
-    """Tu tao 1 Gemini API key qua AI Studio bang CLICK CHUOT THAT (tranh Google chan bot).
-    Browser dang dang nhap Google. Tra key 'AQ...' hoac None."""
-    try:
-        import pyautogui, ctypes
-        ctypes.windll.user32.SetProcessDPIAware()
-        pyautogui.FAILSAFE = False
-    except Exception:
-        return None
+def _create_gemini_key(browser, wait_sec=180):
+    """Mo AI Studio cho NGUOI tu tao Gemini key (thu cong -> tranh Google chan bot
+    va tranh account bi flag). Tool TU BAT key 'AQ...' khi no hien trong trang.
+    Tra key hoac None neu het gio."""
     try:
         tab = browser.latest_tab
         tab.get("https://aistudio.google.com/apikey")
-        time.sleep(7)
+        time.sleep(5)
         try:
-            tab.set.window.full()   # fullscreen -> click chuot khong bi cua so khac che
+            tab.set.window.max()
             tab.set.activate()
         except Exception:
             pass
-        time.sleep(2)
-
-        # Man 'Welcome' (terms): tick checkbox + Continue (CDP du cho buoc nay)
-        try:
-            cbs = tab.eles("css:input[type=checkbox]", timeout=2)
-            if cbs:
-                try:
-                    cbs[0].click()
-                except Exception:
-                    pass
-                time.sleep(1)
-                _click_contains(tab, ["Continue"])
-                time.sleep(3)
-        except Exception:
-            pass
-
-        # Click 'Create API key' (chuot that)
-        clicked = False
-        for e in tab.eles("tag:button", timeout=3):
-            if "create api key" in (e.text or "").lower():
-                clicked = _real_click(e)
-                break
-        if not clicked:
-            return None
-        time.sleep(5)
-
-        # Click 'Create key' trong dialog (chuot that - buoc nhay cam, BAT BUOC)
-        clicked = False
-        for e in tab.eles("tag:button", timeout=3):
-            if (e.text or "").strip().lower() == "create key":
-                clicked = _real_click(e)
-                break
-        if not clicked:
-            return None
-        time.sleep(9)
-
-        if "suspicious" in tab.html.lower():
-            print("   ⚠️ Google bao 'suspicious' -> chua tao duoc (thu lai/tao tay).")
-            return None
-        keys = sorted(set(re.findall(r"AQ\.[A-Za-z0-9_\-]{30,}", tab.html)), key=len, reverse=True)
-        return keys[0] if keys else None
+        print("   👉 HAY TU TAO 1 GEMINI KEY trong cua so vua mo (lam tay, NHANH):")
+        print("      'Create API key' -> chon/tao project -> 'Create key'.")
+        print(f"      Tool se TU NHAN key roi tu dong dong browser (cho toi da {wait_sec}s)...")
+        end = time.time() + wait_sec
+        while time.time() < end:
+            try:
+                keys = re.findall(r"AQ\.[A-Za-z0-9_\-]{30,}", tab.html)
+                if keys:
+                    return sorted(set(keys), key=len, reverse=True)[0]
+            except Exception:
+                pass
+            time.sleep(3)
+        print(f"   ⚠️ Het {wait_sec}s chua thay key -> bo qua kenh nay.")
+        return None
     except Exception as e:
-        print(f"   ⚠️ Tao Gemini key loi: {str(e)[:120]}")
+        print(f"   ⚠️ Loi cho Gemini key: {str(e)[:100]}")
         return None
 
 
@@ -511,17 +492,6 @@ def setup_channel(channel):
     flow.fetch_token(authorization_response=_App.last_uri)
     save_credentials(channel, flow.credentials)
     print(f"✅ Da luu token: {token_path(channel)}")
-
-    # Tu tao Gemini key du phong (1 lan, neu config chua co) - bang CLICK CHUOT THAT
-    global GEMINI_API_KEY
-    if GEMINI_AUTOKEY and not GEMINI_API_KEY:
-        print("🔑 Tu tao Gemini key du phong (click chuot that, tranh bot detect)...")
-        _gk = _create_gemini_key(browser)
-        if _gk and _save_gemini_to_config(_gk):
-            GEMINI_API_KEY = _gk
-            print(f"   ✅ Da tao + luu Gemini key ({_gk[:10]}...). Du phong khi pool loi.")
-        else:
-            print("   ⚠️ Chua tao duoc Gemini key tu dong (co the tao tay sau).")
 
     # TU DONG dong browser cua kenh sau khi lay token (taskkill thang, tranh DrissionPage treo)
     time.sleep(1)
@@ -729,12 +699,10 @@ def _reply_via_pool(prompt_text):
     return (r.json()["choices"][0]["message"]["content"] or "").strip()
 
 
-def _reply_via_gemini(prompt_text):
-    """Du phong: Gemini REST (mien phi, qua IPv6). Tra text hoac raise."""
-    if not GEMINI_API_KEY:
-        raise RuntimeError("chua co GEMINI_API_KEY")
+def _reply_via_gemini(prompt_text, key):
+    """Du phong: Gemini REST (mien phi, qua IPv6) voi 1 key cu the. Tra text hoac raise."""
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+           f"{GEMINI_MODEL}:generateContent?key={key}")
     r = requests.post(
         url,
         json={
@@ -749,10 +717,11 @@ def _reply_via_gemini(prompt_text):
 
 
 def gen_reply_with_prompt(prompt_text):
-    """Sinh reply: thu POOL truoc, loi thi chuyen GEMINI (du phong). Het thi None (bo qua, khong spam)."""
+    """Sinh reply: POOL truoc; loi thi XOAY VONG cac GEMINI key (du phong, chia quota).
+    Het tat ca -> None (bo qua comment, khong spam)."""
     providers = [("pool", _reply_via_pool)]
-    if GEMINI_API_KEY:
-        providers.append(("gemini", _reply_via_gemini))
+    for i, gk in enumerate(_all_gemini_keys(), 1):
+        providers.append((f"gemini#{i}", lambda p, k=gk: _reply_via_gemini(p, k)))
 
     for name, fn in providers:
         for attempt in range(1, REPLY_MAX_RETRIES + 1):
@@ -765,16 +734,15 @@ def gen_reply_with_prompt(prompt_text):
                 err = "reply rong"
             except Exception as e:
                 err = str(e)[:140]
-                # Loi auth (401/403) -> retry vo ich, chuyen provider khac luon
-                if "401" in err or "403" in err:
-                    print(f"   ⚠️ {name} auth loi -> chuyen provider du phong.")
+                # Loi auth/quota (401/403/429) -> retry vo ich, chuyen key/provider khac luon
+                if "401" in err or "403" in err or "429" in err:
+                    print(f"   ⚠️ {name} loi ({err[:40]}) -> chuyen key/provider khac.")
                     break
             print(f"   ⚠️ {name} loi (lan {attempt}/{REPLY_MAX_RETRIES}): {err}")
             if attempt < REPLY_MAX_RETRIES:
                 time.sleep(REPLY_RETRY_WAIT)
 
-    # Tat ca provider that bai -> KHONG post (tranh spam). Tra None -> bo qua comment.
-    print("   ❌ Tat ca provider that bai -> BO QUA comment.")
+    print("   ❌ Tat ca provider/key that bai -> BO QUA comment.")
     return None
 
 
@@ -913,6 +881,47 @@ def run_all():
 
 
 # ========== MAIN ==========
+def collect_gemini_keys():
+    """Pha 2 (sau khi co token): mo TUNG browser kenh -> NGUOI tu tao 1 Gemini key
+    -> tool TU BAT key + luu vao POOL dung chung (config GEMINI_API_KEYS) -> dong browser.
+    Cac key dung chung; reply xoay vong, key het quota -> tu sang key khac."""
+    channels = discover_channels()
+    if not channels:
+        return
+    have = set(_all_gemini_keys())
+    print(f"\n🔑 ===== LAY GEMINI KEY ({len(channels)} browser) - DU PHONG KHI POOL LOI =====")
+    print("   Voi MOI browser mo ra: tu tao 1 key (Create API key -> chon/tao project -> Create key).")
+    print("   Tool tu nhan key -> dong browser -> sang browser tiep theo.")
+    from DrissionPage import Chromium
+    for ch in channels:
+        browser_exe = channel_browser_exe(ch)
+        if not os.path.isfile(browser_exe):
+            continue
+        print(f"\n----- {ch}: mo browser de lay Gemini key -----")
+        if not _open_channel_browser_debug(browser_exe, DEBUG_PORT):
+            print(f"   ⚠️ {ch}: browser khong mo cong debug, bo qua.")
+            continue
+        key = None
+        try:
+            browser = Chromium(f"127.0.0.1:{DEBUG_PORT}")
+            key = _create_gemini_key(browser)
+        except Exception as e:
+            print(f"   ⚠️ {ch}: loi {str(e)[:80]}")
+        if key and key not in have:
+            _save_gemini_to_config(key)
+            have.add(key)
+            print(f"   ✅ {ch}: da lay key ({key[:10]}...). Pool: {len(have)} key.")
+        elif key:
+            print("   (key trung, bo qua)")
+        try:
+            subprocess.run(f'taskkill /F /IM "{os.path.basename(browser_exe)}" /T',
+                           shell=True, capture_output=True)
+        except Exception:
+            pass
+        time.sleep(2)
+    print(f"\n🔑 ===== XONG: pool co {len(have)} Gemini key dung chung =====")
+
+
 def setup_all_channels():
     """Setup token cho TAT CA kenh phat hien duoc (folder <ten>/<ten>.exe).
     Bo qua kenh da co token (xoa tokens/<ten>.json neu muon lam lai)."""
@@ -938,6 +947,10 @@ def setup_all_channels():
             print(f"❌ Loi setup {ch}: {e}")
             fail += 1
     print(f"\n✅ XONG SETUP: {done} kenh moi co token, {skip} da co san, {fail} loi.")
+
+    # Pha 2: lay Gemini key du phong (nguoi tu tao tay, tool bat) cho tung browser
+    if GEMINI_AUTOKEY:
+        collect_gemini_keys()
 
 
 if __name__ == "__main__":
