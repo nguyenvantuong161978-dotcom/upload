@@ -9,5 +9,8 @@
     "SOURCE_SHEET": "NGUON",
     "CREDENTIAL_PATH": "creds.json",
     "STATUS_OK": "EDIT XONG",
-    "STATUS_COL": 48
+    "STATUS_COL": 48,
+
+    "GEMINI_API_KEY": "",
+    "GEMINI_MODEL": "gemini-2.0-flash"
 }

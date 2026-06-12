@@ -59,6 +59,19 @@ REPLY_TIMEOUT = 150       # giay - pool gateway hien chay cham (~60s/request)
 REPLY_MAX_RETRIES = 3     # so lan thu lai khi goi API loi
 REPLY_RETRY_WAIT = 5      # giay cho giua moi lan retry
 
+# Du phong: Gemini (mien phi, chay qua IPv6) khi pool loi.
+# KEY doc tu config.json -> KHONG hardcode/push GitHub (key lo se bi Google ban!).
+# Lay key mien phi tai: https://aistudio.google.com/apikey  -> bo vao config.json: "GEMINI_API_KEY": "..."
+GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_API_KEY = ""
+try:
+    with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as _cf:
+        _cfg_cmt = json.load(_cf)
+    GEMINI_API_KEY = _cfg_cmt.get("GEMINI_API_KEY", "")
+    GEMINI_MODEL = _cfg_cmt.get("GEMINI_MODEL", GEMINI_MODEL)
+except Exception:
+    pass
+
 # Ngon ngu reply theo hau to kenh -T<n> (vd TL1-T1 / TH2-T1 -> Spanish)
 LANG_MAP = {
     1: "Spanish", 2: "Vietnamese", 3: "English", 4: "French", 5: "German",
@@ -583,39 +596,72 @@ def pick_relevant_snippet(transcript_text, comment_text, max_chars=900):
 
 
 # ========== SINH PHAN HOI ==========
-def gen_reply_with_prompt(prompt_text):
-    """Goi Pool API sinh reply. Retry vai lan neu loi (mang/5xx/timeout)."""
-    last_err = None
-    for attempt in range(1, REPLY_MAX_RETRIES + 1):
-        try:
-            r = requests.post(
-                REPLY_API_BASE + "/chat/completions",
-                headers={
-                    "Authorization": "Bearer " + REPLY_API_KEY,
-                    "Content-Type": "application/json",
-                    "Accept-Encoding": "identity",  # tranh loi gzip header sai tu gateway
-                },
-                json={
-                    "model": REPLY_MODEL,
-                    "messages": [{"role": "user", "content": prompt_text}],
-                    "max_tokens": 300,
-                },
-                timeout=REPLY_TIMEOUT,
-            )
-            r.raise_for_status()
-            reply = (r.json()["choices"][0]["message"]["content"] or "").strip()
-            if reply:
-                sentences = re.split(r'(?<=[.!?])\s+', reply)
-                return " ".join(sentences[:2]).strip()
-            last_err = "reply rong"
-        except Exception as e:
-            last_err = str(e)[:140]
-        print(f"   ⚠️ API reply loi (lan {attempt}/{REPLY_MAX_RETRIES}): {last_err}")
-        if attempt < REPLY_MAX_RETRIES:
-            time.sleep(REPLY_RETRY_WAIT)
+def _reply_via_pool(prompt_text):
+    """Goi Pool API (OpenAI-compatible). Tra text hoac raise."""
+    r = requests.post(
+        REPLY_API_BASE + "/chat/completions",
+        headers={
+            "Authorization": "Bearer " + REPLY_API_KEY,
+            "Content-Type": "application/json",
+            "Accept-Encoding": "identity",  # tranh loi gzip header sai tu gateway
+        },
+        json={
+            "model": REPLY_MODEL,
+            "messages": [{"role": "user", "content": prompt_text}],
+            "max_tokens": 300,
+        },
+        timeout=REPLY_TIMEOUT,
+    )
+    r.raise_for_status()
+    return (r.json()["choices"][0]["message"]["content"] or "").strip()
 
-    # KHONG tra cau mac dinh (tranh post sai ngon ngu/rac). Tra None -> bo qua comment.
-    print(f"   ❌ API reply that bai sau {REPLY_MAX_RETRIES} lan -> BO QUA comment.")
+
+def _reply_via_gemini(prompt_text):
+    """Du phong: Gemini REST (mien phi, qua IPv6). Tra text hoac raise."""
+    if not GEMINI_API_KEY:
+        raise RuntimeError("chua co GEMINI_API_KEY")
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}")
+    r = requests.post(
+        url,
+        json={
+            "contents": [{"parts": [{"text": prompt_text}]}],
+            "generationConfig": {"maxOutputTokens": 300},
+        },
+        timeout=60,
+    )
+    r.raise_for_status()
+    data = r.json()
+    return (data["candidates"][0]["content"]["parts"][0]["text"] or "").strip()
+
+
+def gen_reply_with_prompt(prompt_text):
+    """Sinh reply: thu POOL truoc, loi thi chuyen GEMINI (du phong). Het thi None (bo qua, khong spam)."""
+    providers = [("pool", _reply_via_pool)]
+    if GEMINI_API_KEY:
+        providers.append(("gemini", _reply_via_gemini))
+
+    for name, fn in providers:
+        for attempt in range(1, REPLY_MAX_RETRIES + 1):
+            err = None
+            try:
+                reply = (fn(prompt_text) or "").strip()
+                if reply:
+                    sentences = re.split(r'(?<=[.!?])\s+', reply)
+                    return " ".join(sentences[:2]).strip()
+                err = "reply rong"
+            except Exception as e:
+                err = str(e)[:140]
+                # Loi auth (401/403) -> retry vo ich, chuyen provider khac luon
+                if "401" in err or "403" in err:
+                    print(f"   ⚠️ {name} auth loi -> chuyen provider du phong.")
+                    break
+            print(f"   ⚠️ {name} loi (lan {attempt}/{REPLY_MAX_RETRIES}): {err}")
+            if attempt < REPLY_MAX_RETRIES:
+                time.sleep(REPLY_RETRY_WAIT)
+
+    # Tat ca provider that bai -> KHONG post (tranh spam). Tra None -> bo qua comment.
+    print("   ❌ Tat ca provider that bai -> BO QUA comment.")
     return None
 
 
