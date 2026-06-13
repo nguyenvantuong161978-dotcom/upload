@@ -64,6 +64,11 @@ if exist "%SRC_DIR%\tool_gui.py" (
     echo   [OK] tool_gui.py
 )
 
+if exist "%SRC_DIR%\stats.py" (
+    copy /y "%SRC_DIR%\stats.py" "%~dp0stats.py" >nul
+    echo   [OK] stats.py
+)
+
 if exist "%SRC_DIR%\icon" (
     if exist "%~dp0icon" rd /s /q "%~dp0icon"
     xcopy "%SRC_DIR%\icon" "%~dp0icon\" /e /i /q >nul

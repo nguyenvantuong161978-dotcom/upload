@@ -2222,6 +2222,16 @@ def main():
 
         posted = post_channel(ch, ready_codes, input_rows, client)
         total_posted += posted
+        # Ghi so video dang HOM NAY cho kenh (de GUI hien tong quan)
+        try:
+            import sys as _sys
+            _d = os.path.dirname(os.path.abspath(__file__))
+            if _d not in _sys.path:
+                _sys.path.insert(0, _d)
+            import stats
+            stats.bump(ch_code, "video", posted)
+        except Exception:
+            pass
 
         # Đóng browser kênh này trước khi chuyển sang kênh tiếp
         if ch_idx < len(channel_tasks):

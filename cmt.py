@@ -861,6 +861,16 @@ def process_channel(channel, max_posts=POSTS_PER_RUN):
             if not DRY_RUN:
                 post_reply(yt, cid, reply)
                 posted += 1
+                # Ghi so reply HOM NAY cho kenh (de GUI hien tong quan)
+                try:
+                    import sys as _sys
+                    _d = os.path.dirname(os.path.abspath(__file__))
+                    if _d not in _sys.path:
+                        _sys.path.insert(0, _d)
+                    import stats
+                    stats.bump(channel, "reply")
+                except Exception:
+                    pass
                 # Gian NGAU NHIEN nhu nguoi that go -> tranh bi YouTube coi spam
                 wait = random.uniform(REPLY_DELAY_MIN, REPLY_DELAY_MAX)
                 print(f"   ⏳ Cho {int(wait)}s roi reply tiep (gian chong spam)...")

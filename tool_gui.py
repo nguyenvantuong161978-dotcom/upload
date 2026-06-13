@@ -10,11 +10,14 @@ Nut: [Chay] [Restart Dang] [Restart Cmt] [Lay Token/Key] [Dung]
 Hien: trang thai dang/cmt + uptime, so kenh/token/key, log 2 script.
 """
 import os
+import sys
 import time
 import json
 import subprocess
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:        # python nhung khong tu them dir script -> them de import stats
+    sys.path.insert(0, BASE_DIR)
 
 # Tcl/Tk duoc cay vao python nhung (python/tcl/...). Chi cho Tkinter biet duong dan
 # truoc khi import (python embeddable khong tu set TCL_LIBRARY/TK_LIBRARY).
@@ -308,8 +311,8 @@ class App:
         # ----- BANG TONG QUAN (nhin phat hieu) -----
         ovf = tk.Frame(self.root, bg=BG)
         ovf.pack(fill="x", padx=10, pady=(0, 6))
-        tk.Label(ovf, text="TONG QUAN CAC KENH", font=("Segoe UI", 9, "bold"),
-                 fg=YELLOW, bg=BG).pack(anchor="w")
+        tk.Label(ovf, text="TONG QUAN CAC KENH  (VIDEO + REPLY = so lieu HOM NAY)",
+                 font=("Segoe UI", 9, "bold"), fg=YELLOW, bg=BG).pack(anchor="w")
         _oh = max(4, min(14, len(discover_channels()) + 3))
         self.txt_over = tk.Text(ovf, bg=PANEL, fg=FG, font=("Consolas", 10),
                                 relief="flat", height=_oh, wrap="none")
@@ -446,11 +449,16 @@ class App:
         chs = discover_channels()
         if not chs:
             return "(chua phat hien kenh nao)"
-        out = [f"{'KENH':<11}{'NGON NGU':<13}{'TOKEN':<8}CMT DA LAM"]
+        try:
+            import stats
+        except Exception:
+            stats = None
+        out = [f"{'KENH':<11}{'NGON NGU':<12}{'TOKEN':<7}{'VIDEO':<8}REPLY"]
         out.append("-" * 44)
         for c in chs:
             tok = "✓" if has_token(c) else "✗"
-            out.append(f"{c:<11}{channel_lang(c):<13}{tok:<8}{replied_count(c)}")
+            v, r = stats.today_counts(c) if stats else (0, 0)
+            out.append(f"{c:<11}{channel_lang(c):<12}{tok:<7}{v:<8}{r}")
         return "\n".join(out)
 
     def refresh(self):
