@@ -15,7 +15,7 @@ Cau truc:
     upload/replied/<kenh>.txt        Trang thai comment da reply moi kenh
     upload/transcripts/<vid>.txt     Cache transcript dung chung
 """
-import os, sys, json, time, re, webbrowser, subprocess
+import os, sys, json, time, re, random, webbrowser, subprocess
 from datetime import datetime, timezone
 
 # Ep stdout/stderr ve UTF-8 — tranh UnicodeEncodeError khi in emoji/ky tu Unicode
@@ -61,9 +61,13 @@ CLIENT_SECRET_FILE = os.path.join(BASE_DIR, "client_secret.json")  # fallback du
 DEBUG_PORT = 9222  # cong remote-debugging de DrissionPage attach vao browser kenh
 
 DRY_RUN = False                  # True: chi in, khong dang
-POSTS_PER_RUN = 10               # Gioi han so comment moi lan / moi kenh
-SLEEP_BETWEEN_POSTS = 0.5        # Gian cach giua cac post
-RUN_INTERVAL_HOURS = 12          # Production: chu ky chay lai
+POSTS_PER_RUN = 20               # Toi da reply MOI / kenh / chu ky (cong bang giua cac kenh + an toan).
+                                 # Khong bo cmt nao: chu ky sau lam tiep cmt con lai (seen luu lai).
+                                 # Tran cung that su la QUOTA YouTube (~200 reply/ngay/project).
+# Gian cach NGAU NHIEN giua 2 reply -> go nhu nguoi that, chong bi YouTube coi spam (QUAN TRONG NHAT)
+REPLY_DELAY_MIN = 40             # giay (toi thieu giua 2 reply)
+REPLY_DELAY_MAX = 180            # giay (toi da)
+RUN_INTERVAL_HOURS = 12          # Production: chu ky chay lai (co them jitter ngau nhien)
 
 # Pool API sinh reply (OpenAI-compatible, qua IPv6)
 REPLY_API_BASE = "http://[2001:ee0:b004:3001::10]:8318/v1"
@@ -857,9 +861,16 @@ def process_channel(channel, max_posts=POSTS_PER_RUN):
             if not DRY_RUN:
                 post_reply(yt, cid, reply)
                 posted += 1
-            time.sleep(SLEEP_BETWEEN_POSTS)
+                # Gian NGAU NHIEN nhu nguoi that go -> tranh bi YouTube coi spam
+                wait = random.uniform(REPLY_DELAY_MIN, REPLY_DELAY_MAX)
+                print(f"   ⏳ Cho {int(wait)}s roi reply tiep (gian chong spam)...")
+                time.sleep(wait)
         except Exception as e:
             print("⚠️ Error posting:", e)
+            # Het quota project -> dung kenh nay, chu ky sau lam tiep (KHONG danh dau seen -> khong mat cmt)
+            if "quota" in str(e).lower():
+                print(f"   ⛔ Het quota API -> dung kenh {channel}, chu ky sau lam tiep cmt con lai.")
+                break
         # Danh dau + LUU NGAY sau moi comment -> bi ngat giua chung cung khong reply trung
         seen.add(cid)
         save_state(channel, seen)
@@ -1009,5 +1020,7 @@ if __name__ == "__main__":
             except Exception as e:
                 print("⚠️ Loi khi chay run_all():", e)
             print(f"✅ Hoan tat luc {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"⏰ Cho {RUN_INTERVAL_HOURS} tieng truoc lan chay tiep theo...\n")
-            time.sleep(RUN_INTERVAL_HOURS * 60 * 60)
+            jitter = random.uniform(-1800, 1800)   # +-30 phut cho do deu dan nhu may
+            wait = max(3600, RUN_INTERVAL_HOURS * 3600 + jitter)
+            print(f"⏰ Cho ~{RUN_INTERVAL_HOURS} tieng (lech {int(jitter)}s) truoc lan chay tiep...\n")
+            time.sleep(wait)
