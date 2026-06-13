@@ -1107,23 +1107,25 @@ def delete_server_folder(code):
             logging.warning(f"Khong xoa duoc server {server_folder}: {e}")
 
 
-def cleanup_posted_codes():
-    """Xóa thư mục local của các mã đã 'ĐÃ ĐĂNG'. Dùng cache nếu Sheets lỗi."""
+def cleanup_posted_codes(rows=None):
+    """Xóa thư mục local của các mã đã 'ĐÃ ĐĂNG'.
+    Uu tien dung 'rows' da doc san trong RAM (khong goi lai Sheets -> khong treo, khong can IPv4).
+    Chi khi khong co rows moi doc Sheets/cache."""
     logging.info("Don cac ma da dang...")
-    rows = None
-    try:
-        client = gs_client()
-        rows = get_rows(client, INPUT_SHEET)
-    except Exception as e:
-        logging.warning(f"cleanup: Sheets loi ({e}), thu doc cache...")
-        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
-        if os.path.isfile(_cache_path):
-            try:
-                with open(_cache_path, "r", encoding="utf-8") as f:
-                    rows = json.load(f)
-                logging.info(f"cleanup: dung cache ({len(rows)} dong).")
-            except Exception:
-                pass
+    if rows is None:
+        try:
+            client = gs_client()
+            rows = get_rows(client, INPUT_SHEET)
+        except Exception as e:
+            logging.warning(f"cleanup: Sheets loi ({e}), thu doc cache...")
+            _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
+            if os.path.isfile(_cache_path):
+                try:
+                    with open(_cache_path, "r", encoding="utf-8") as f:
+                        rows = json.load(f)
+                    logging.info(f"cleanup: dung cache ({len(rows)} dong).")
+                except Exception:
+                    pass
     if not rows:
         logging.warning("cleanup: khong co du lieu, bo qua.")
         return
@@ -2153,8 +2155,8 @@ def main():
             return
 
     import threading
-    logging.info("[2/5] Don ma da dang (toi da 90s)...")
-    cleanup_thread = threading.Thread(target=cleanup_posted_codes, daemon=True)
+    logging.info("[2/5] Don ma da dang (dung cache RAM, toi da 90s)...")
+    cleanup_thread = threading.Thread(target=cleanup_posted_codes, args=(input_rows,), daemon=True)
     cleanup_thread.start()
     cleanup_thread.join(timeout=90)
     if cleanup_thread.is_alive():
