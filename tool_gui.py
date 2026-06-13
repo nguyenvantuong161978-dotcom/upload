@@ -95,10 +95,18 @@ def launch_hidden(script, log_path):
     )
 
 
-def launch_setup_visible():
-    """Chay 'cmt.py setup' trong console HIEN de user tu chon tk + tao key Gemini."""
-    subprocess.Popen(f'start "Lay Token + Key Gemini" "{PY}" cmt.py setup',
-                     cwd=BASE_DIR, shell=True)
+CREATE_NEW_CONSOLE = 0x00000010
+
+def launch_setup_console():
+    """Mo 'cmt.py setup' trong 1 console RIENG (hien) de user tu chon tk + tao key.
+    Tra ve Popen de GUI theo doi: setup xong -> tu chay lai dang/cmt."""
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    return subprocess.Popen(
+        [PY, "-X", "utf8", "cmt.py", "setup"],
+        cwd=BASE_DIR, creationflags=CREATE_NEW_CONSOLE, env=env,
+    )
 
 
 def trim_log(path):
@@ -165,6 +173,15 @@ class App:
         self.proc_cmt = None
         self.t_dang = 0
         self.t_cmt = 0
+        self.running = False          # True khi dang o che do chay (de watchdog tu restart)
+        self.n_rl_dang = 0            # so lan tu dong restart dang
+        self.n_rl_cmt = 0            # so lan tu dong restart cmt
+        self.last_rl_dang = 0
+        self.last_rl_cmt = 0
+        self.proc_setup = None        # tien trinh 'cmt.py setup' (Lay Token/Key) dang mo
+        self.last_temp_clean = time.time()
+        self._tick = 0
+        self._ram_txt = ""
 
         self.root = tk.Tk()
         self.root.title("TOOL DIEU KHIEN — Dang + Cmt")
@@ -182,11 +199,10 @@ class App:
         btns = tk.Frame(self.root, bg=BG)
         btns.pack(fill="x", padx=10, pady=(0, 6))
         for txt, cmd, clr in [
-            ("▶ Chay", self.start_all, GREEN),
             ("↻ Restart Dang", self.restart_dang, BLUE),
             ("↻ Restart Cmt", self.restart_cmt, BLUE),
             ("🔑 Lay Token/Key", self.do_setup, YELLOW),
-            ("■ Dung", self.stop_all, RED),
+            ("🧹 Don rac temp", self.clean_temp, GREEN),
         ]:
             tk.Button(btns, text=txt, command=cmd, bg=clr, fg=BG,
                       font=("Segoe UI", 9, "bold"), relief="flat", padx=8).pack(side="left", padx=3)
@@ -218,8 +234,10 @@ class App:
         self.t_dang = time.time()
         self.proc_cmt = launch_hidden(CMT, CMT_LOG)
         self.t_cmt = time.time()
+        self.running = True
 
     def stop_all(self):
+        self.running = False
         kill_pid(self.proc_dang)
         kill_pid(self.proc_cmt)
         kill_all_scripts()
@@ -234,18 +252,28 @@ class App:
         time.sleep(1)
         self.proc_dang = launch_hidden(DANG, DANG_LOG)
         self.t_dang = time.time()
+        self.running = True
 
     def restart_cmt(self):
         kill_pid(self.proc_cmt)
         time.sleep(0.5)
         self.proc_cmt = launch_hidden(CMT, CMT_LOG)
         self.t_cmt = time.time()
+        self.running = True
 
     def do_setup(self):
-        # Dung dang/cmt de tranh tranh browser, roi mo setup HIEN cho user tu thao tac
+        # Tam dung dang/cmt (tranh tranh browser) -> mo setup HIEN. Setup xong se TU CHAY LAI.
         self.stop_all()
         time.sleep(1)
-        launch_setup_visible()
+        self.proc_setup = launch_setup_console()
+
+    def clean_temp(self):
+        # Don rac %temp% (file dang dung bi khoa se tu dong bo qua)
+        try:
+            subprocess.run('cmd /c del /q /f /s "%temp%\\*.*"', shell=True, capture_output=True)
+        except Exception:
+            pass
+        self.last_temp_clean = time.time()
 
     # ---- hien thi ----
     def _alive(self, p):
@@ -259,21 +287,83 @@ class App:
         m, _ = divmod(s, 60)
         return f"{h}h{m:02d}m"
 
-    def refresh(self):
-        da = self._alive(self.proc_dang)
-        ca = self._alive(self.proc_cmt)
-        self.lbl_dang.config(text=f"● Dang: {'CHAY ' + self._uptime(self.t_dang) if da else 'DUNG'}",
-                             fg=GREEN if da else RED)
-        self.lbl_cmt.config(text=f"● Cmt: {'CHAY ' + self._uptime(self.t_cmt) if ca else 'DUNG'}",
-                            fg=GREEN if ca else RED)
-        nch, ntok, nkey = count_status()
-        self.lbl_sum.config(text=f"{nch} kenh | {ntok} token | {nkey} key Gemini")
+    def _ram_mb(self):
+        """Tong RAM cua cac python.exe (dang+cmt) -> de thay 'nang' hay khong."""
+        try:
+            out = subprocess.run('tasklist /fi "imagename eq python.exe" /fo csv /nh',
+                                 shell=True, capture_output=True, text=True).stdout
+            kb = 0
+            for line in out.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                last = line.split('","')[-1].strip(' "')
+                digits = ''.join(c for c in last if c.isdigit())
+                if digits:
+                    kb += int(digits)
+            mb = kb // 1024
+            return f"{mb}MB" if mb else "..."
+        except Exception:
+            return "..."
 
-        trim_log(DANG_LOG)
-        trim_log(CMT_LOG)
-        self._set_text(self.txt_dang, read_tail(DANG_LOG))
-        self._set_text(self.txt_cmt, read_tail(CMT_LOG))
-        self.root.after(2500, self.refresh)
+    def refresh(self):
+        try:
+            self._tick += 1
+            now = time.time()
+
+            # 1) Setup xong (cua so setup da dong) -> tu chay lai dang/cmt
+            if self.proc_setup is not None and self.proc_setup.poll() is not None:
+                self.proc_setup = None
+                self.start_all()
+
+            da = self._alive(self.proc_dang)
+            ca = self._alive(self.proc_cmt)
+
+            # 2) Watchdog: dang chay ma tien trinh chet cung -> tu khoi dong lai (cho 20s tranh loop)
+            if self.running and self.proc_setup is None:
+                if not da and now - self.last_rl_dang > 20:
+                    self.proc_dang = launch_hidden(DANG, DANG_LOG)
+                    self.t_dang = now
+                    self.last_rl_dang = now
+                    self.n_rl_dang += 1
+                    da = True
+                if not ca and now - self.last_rl_cmt > 20:
+                    self.proc_cmt = launch_hidden(CMT, CMT_LOG)
+                    self.t_cmt = now
+                    self.last_rl_cmt = now
+                    self.n_rl_cmt += 1
+                    ca = True
+
+            # 3) Don rac %temp% dinh ky (6 tieng/lan) cho khoi nang
+            if now - self.last_temp_clean > 6 * 3600:
+                self.clean_temp()
+
+            # 4) RAM (cap nhat ~12s/lan vi tasklist hoi nang)
+            if self._tick % 5 == 1:
+                self._ram_txt = self._ram_mb()
+
+            if self.proc_setup is not None:
+                self.lbl_dang.config(text="● Dang: TAM DUNG (dang lay token/key)", fg=YELLOW)
+                self.lbl_cmt.config(text="● Cmt: TAM DUNG (dang lay token/key)", fg=YELLOW)
+            else:
+                rl_d = f"  [tu restart {self.n_rl_dang}]" if self.n_rl_dang else ""
+                rl_c = f"  [tu restart {self.n_rl_cmt}]" if self.n_rl_cmt else ""
+                self.lbl_dang.config(text=f"● Dang: {'CHAY ' + self._uptime(self.t_dang) if da else 'DUNG'}{rl_d}",
+                                     fg=GREEN if da else RED)
+                self.lbl_cmt.config(text=f"● Cmt: {'CHAY ' + self._uptime(self.t_cmt) if ca else 'DUNG'}{rl_c}",
+                                    fg=GREEN if ca else RED)
+
+            nch, ntok, nkey = count_status()
+            self.lbl_sum.config(text=f"{nch} kenh | {ntok} token | {nkey} key | RAM {self._ram_txt}")
+
+            trim_log(DANG_LOG)
+            trim_log(CMT_LOG)
+            self._set_text(self.txt_dang, read_tail(DANG_LOG))
+            self._set_text(self.txt_cmt, read_tail(CMT_LOG))
+        except Exception:
+            pass
+        finally:
+            self.root.after(2500, self.refresh)
 
     def _set_text(self, widget, content):
         at_end = True

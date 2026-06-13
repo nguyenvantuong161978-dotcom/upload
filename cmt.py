@@ -987,6 +987,11 @@ if __name__ == "__main__":
             setup_channel(args[1])      # setup 1 kenh cu the
         else:
             setup_all_channels()        # setup TAT CA kenh (1 lenh xong het)
+        # Giu cua so mo de doc ket qua; bam Enter -> dong -> GUI tu chay lai dang/cmt
+        try:
+            input("\n✅ Xong. Nhan Enter de dong cua so nay...")
+        except Exception:
+            pass
 
     elif args and args[0] == "test":
         if len(args) < 2:
