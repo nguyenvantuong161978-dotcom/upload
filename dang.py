@@ -520,6 +520,75 @@ def get_rows(client, sheet_name):
     )
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Doc Sheets bang requests + Sheets API v4 (CO timeout -> KHONG treo vo han
+# nhu gspread/httplib2). Chay on dinh qua IPv6 (mang Google IPv4 hay chap chon).
+# ──────────────────────────────────────────────────────────────────────
+_SHEET_ID_CACHE = {}
+_TOKEN_CACHE = {"token": None, "exp": 0}
+
+
+def _get_access_token(timeout=20):
+    """Lay access token cua service account bang requests (CO timeout).
+    Tu ky JWT (google.auth) roi POST token endpoint -> khong qua AuthorizedSession (cai treo)."""
+    import requests
+    if _TOKEN_CACHE["token"] and time.time() < _TOKEN_CACHE["exp"] - 120:
+        return _TOKEN_CACHE["token"]
+    from google.oauth2.service_account import Credentials
+    scope = ["https://www.googleapis.com/auth/spreadsheets.readonly",
+             "https://www.googleapis.com/auth/drive.readonly"]
+    creds = Credentials.from_service_account_file(CREDENTIAL_PATH, scopes=scope)
+    assertion = creds._make_authorization_grant_assertion()
+    r = requests.post(creds._token_uri,
+                      data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                            "assertion": assertion},
+                      timeout=timeout)
+    r.raise_for_status()
+    j = r.json()
+    _TOKEN_CACHE["token"] = j["access_token"]
+    _TOKEN_CACHE["exp"] = time.time() + int(j.get("expires_in", 3600))
+    return _TOKEN_CACHE["token"]
+
+
+def _resolve_sheet_id(token, name, timeout):
+    import requests
+    if name in _SHEET_ID_CACHE:
+        return _SHEET_ID_CACHE[name]
+    r = requests.get("https://www.googleapis.com/drive/v3/files",
+                     headers={"Authorization": f"Bearer {token}"},
+                     params={"q": f"name='{name}' and mimeType='application/vnd.google-apps.spreadsheet'",
+                             "fields": "files(id,name)", "pageSize": 5}, timeout=timeout)
+    r.raise_for_status()
+    files = r.json().get("files", [])
+    if not files:
+        raise Exception(f"Khong tim thay spreadsheet ten '{name}'")
+    _SHEET_ID_CACHE[name] = files[0]["id"]
+    return files[0]["id"]
+
+
+def get_rows_fast(sheet_name, timeout=20, tries=4):
+    """Doc 1 sheet bang Sheets API v4 + requests (MOI call deu co timeout -> khong treo).
+    Loi sau {tries} lan -> raise (caller dung cache)."""
+    import requests
+    last = None
+    for i in range(1, tries + 1):
+        try:
+            token = _get_access_token(timeout)
+            sid = _resolve_sheet_id(token, SPREADSHEET_NAME, timeout)
+            r = requests.get(f"https://sheets.googleapis.com/v4/spreadsheets/{sid}/values/{sheet_name}",
+                             headers={"Authorization": f"Bearer {token}"},
+                             params={"majorDimension": "ROWS"}, timeout=timeout)
+            r.raise_for_status()
+            return r.json().get("values", [])
+        except Exception as e:
+            last = e
+            _TOKEN_CACHE["token"] = None      # buoc lay token moi lan sau
+            logging.warning(f"get_rows_fast('{sheet_name}') lan {i}/{tries}: {repr(e)[:90]}")
+            if i < tries:
+                time.sleep(8)
+    raise Exception(f"get_rows_fast that bai sau {tries} lan: {last}")
+
+
 def find_row_by_code(rows, code):
     for row in rows[1:]:
         if row and len(row) > 0 and norm(row[0]) == code:
@@ -2125,34 +2194,35 @@ def main():
         open_run_and_execute(f'cmd /c {kills}')
     rsleep("small")
 
-    # === BƯỚC 1: Bật IPv4 + SMB ===
-    logging.info("[1/5] Ket noi SMB may chu (bat IPv4)...")
-    smb_connect()
-
-    # === BƯỚC 2: Lấy dữ liệu Google Sheets ===
-    logging.info("[2/5] Tai du lieu Google Sheets (qua IPv4)...")
-    client = None
+    # === BƯỚC 1: Đọc Google Sheets qua IPv6 (TRƯỚC khi bật IPv4), bằng requests có timeout ===
+    # Sheets API qua IPv6 on dinh; doc qua IPv4 (gspread/httplib2 khong timeout) hay treo 60s -> bo.
+    logging.info("[1/5] Tai du lieu Google Sheets (IPv6, requests co timeout)...")
     input_rows = None
+    _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
     try:
-        client = gs_client()
-        input_rows = get_rows(client, INPUT_SHEET)
-        logging.info(f"[2/5] Da doc {len(input_rows)} dong tu sheet '{INPUT_SHEET}'.")
-
-        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
+        input_rows = get_rows_fast(INPUT_SHEET)
+        logging.info(f"[1/5] Da doc {len(input_rows)} dong tu sheet '{INPUT_SHEET}'.")
         with open(_cache_path, "w", encoding="utf-8") as f:
             json.dump(input_rows, f, ensure_ascii=False)
-        logging.info("[2/5] Da luu cache JSON local.")
+        logging.info("[1/5] Da luu cache JSON local.")
     except Exception as e:
-        logging.warning(f"[2/5] Khong doc duoc Sheets qua IPv4: {e}")
-        _cache_path = os.path.join(BASE_DIR, "_sheet_cache.json")
+        logging.warning(f"[1/5] Doc Sheets loi: {e}")
         if os.path.isfile(_cache_path):
             with open(_cache_path, "r", encoding="utf-8") as f:
                 input_rows = json.load(f)
-            logging.info(f"[2/5] Dung cache cu ({len(input_rows)} dong).")
+            logging.info(f"[1/5] Dung cache cu ({len(input_rows)} dong).")
         else:
-            logging.error("[2/5] Khong co cache -> khong the tiep tuc.")
-            smb_disconnect()
+            logging.error("[1/5] Khong co cache -> khong the tiep tuc.")
             return
+
+    # === BƯỚC 2: Bật IPv4 + SMB + tạo client (cho việc GHI status khi đăng video) ===
+    logging.info("[2/5] Ket noi SMB may chu (bat IPv4)...")
+    smb_connect()
+    client = None
+    try:
+        client = gs_client()
+    except Exception as e:
+        logging.warning(f"[2/5] gs_client (ghi status) loi: {e}")
 
     import threading
     logging.info("[2/5] Don ma da dang (dung cache RAM, toi da 90s)...")
