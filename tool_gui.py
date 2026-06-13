@@ -66,7 +66,29 @@ def kill_pid(p):
         pass
 
 
-def kill_browsers():
+def _channel_proc_names():
+    """Ten tien trinh browser kenh (vd TL1-T1.exe -> 'TL1-T1')."""
+    return [os.path.splitext(e)[0] for e in discover_channel_exes()]
+
+
+def kill_browsers(graceful_wait=6):
+    """Dong browser NHE NHANG (CloseMainWindow ~ bam X) de KHONG hong profile antidetect.
+    Cho luu xong roi MOI force-kill nhung cai con ket (treo, hoi 'Save?') de relaunch duoc."""
+    names = ["chrome", "msedge", "firefox"] + _channel_proc_names()
+    quoted = ",".join("'" + n.replace("'", "") + "'" for n in names)
+    ps = (
+        f"$names=@({quoted});"
+        "Get-Process -ErrorAction SilentlyContinue | "
+        "Where-Object { $names -contains $_.ProcessName } | "
+        "ForEach-Object { if($_.MainWindowHandle -ne 0){ $null=$_.CloseMainWindow() } }"
+    )
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps],
+                       capture_output=True, creationflags=CREATE_NO_WINDOW)
+    except Exception:
+        pass
+    time.sleep(graceful_wait)   # cho browser luu profile + dong sach
+    # Chi force nhung cai van con song (de relaunch khong bi khoa profile)
     for b in ["chrome.exe", "msedge.exe", "firefox.exe"]:
         subprocess.run(f'taskkill /F /IM "{b}" /T', shell=True, capture_output=True)
     for exe in discover_channel_exes():
