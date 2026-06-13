@@ -7,10 +7,12 @@
 !VERSION
 !cmt.py
 !dang.py
+!tool_gui.py
 !run.bat
 !update.bat
 !setup.bat
 !lay_token.bat
+!tkinter-embed-py311.zip
 !config.example.json
 !icon/
 !icon/**

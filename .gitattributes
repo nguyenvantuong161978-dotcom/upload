@@ -4,3 +4,6 @@
 
 # Python giu LF cho gon
 *.py text eol=lf
+
+# Zip Tcl/Tk la binary - git khong duoc dung cham
+*.zip binary

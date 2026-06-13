@@ -59,6 +59,11 @@ if exist "%SRC_DIR%\dang.py" (
     echo   [OK] dang.py
 )
 
+if exist "%SRC_DIR%\tool_gui.py" (
+    copy /y "%SRC_DIR%\tool_gui.py" "%~dp0tool_gui.py" >nul
+    echo   [OK] tool_gui.py
+)
+
 if exist "%SRC_DIR%\icon" (
     if exist "%~dp0icon" rd /s /q "%~dp0icon"
     xcopy "%SRC_DIR%\icon" "%~dp0icon\" /e /i /q >nul
@@ -78,6 +83,17 @@ if exist "%SRC_DIR%\setup.bat" (
 if exist "%SRC_DIR%\lay_token.bat" (
     copy /y "%SRC_DIR%\lay_token.bat" "%~dp0lay_token.bat" >nul
     echo   [OK] lay_token.bat
+)
+
+REM Tcl/Tk cho GUI: copy zip + tu cay lan dau (neu chua co tkinter)
+if exist "%SRC_DIR%\tkinter-embed-py311.zip" (
+    copy /y "%SRC_DIR%\tkinter-embed-py311.zip" "%~dp0tkinter-embed-py311.zip" >nul
+    echo   [OK] tkinter-embed-py311.zip
+    if not exist "%~dp0python\tkinter\__init__.py" (
+        echo   Dang cay Tcl/Tk vao python (GUI)...
+        powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -Path '%~dp0tkinter-embed-py311.zip' -DestinationPath '%~dp0python' -Force"
+        echo   [OK] da cay Tcl/Tk - GUI san sang
+    )
 )
 
 if exist "%SRC_DIR%\VERSION" (
