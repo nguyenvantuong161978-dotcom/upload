@@ -158,6 +158,41 @@ def count_status():
     return nch, ntok, nkey
 
 
+import re as _re
+
+LANG_MAP = {1: "Spanish", 2: "Vietnamese", 3: "English", 4: "French", 5: "German",
+            6: "Portuguese", 7: "Japanese", 8: "Korean", 9: "Italian", 10: "Turkish"}
+
+
+def channel_lang(name):
+    m = _re.search(r"-T(\d+)", name)
+    return LANG_MAP.get(int(m.group(1)), "?") if m else "?"
+
+
+def discover_channels():
+    out = []
+    try:
+        for n in sorted(os.listdir(PARENT)):
+            d = os.path.join(PARENT, n)
+            if os.path.isdir(d) and n.lower() != "upload" and os.path.isfile(os.path.join(d, n + ".exe")):
+                out.append(n)
+    except Exception:
+        pass
+    return out
+
+
+def has_token(name):
+    return os.path.isfile(os.path.join(BASE_DIR, "tokens", name + ".json"))
+
+
+def replied_count(name):
+    try:
+        with open(os.path.join(BASE_DIR, "replied", name + ".txt"), encoding="utf-8", errors="ignore") as f:
+            return sum(1 for ln in f if ln.strip())
+    except Exception:
+        return 0
+
+
 BG = "#1e1e2e"
 PANEL = "#11111b"
 FG = "#cdd6f4"
@@ -202,12 +237,21 @@ class App:
             ("↻ Restart Dang", self.restart_dang, BLUE),
             ("↻ Restart Cmt", self.restart_cmt, BLUE),
             ("🔑 Lay Token/Key", self.do_setup, YELLOW),
-            ("🧹 Don rac temp", self.clean_temp, GREEN),
         ]:
             tk.Button(btns, text=txt, command=cmd, bg=clr, fg=BG,
                       font=("Segoe UI", 9, "bold"), relief="flat", padx=8).pack(side="left", padx=3)
         self.lbl_sum = tk.Label(btns, text="", font=("Consolas", 9), fg=YELLOW, bg=BG)
         self.lbl_sum.pack(side="right", padx=6)
+
+        # ----- BANG TONG QUAN (nhin phat hieu) -----
+        ovf = tk.Frame(self.root, bg=BG)
+        ovf.pack(fill="x", padx=10, pady=(0, 6))
+        tk.Label(ovf, text="TONG QUAN CAC KENH", font=("Segoe UI", 9, "bold"),
+                 fg=YELLOW, bg=BG).pack(anchor="w")
+        _oh = max(4, min(14, len(discover_channels()) + 3))
+        self.txt_over = tk.Text(ovf, bg=PANEL, fg=FG, font=("Consolas", 10),
+                                relief="flat", height=_oh, wrap="none")
+        self.txt_over.pack(fill="x")
 
         body = tk.Frame(self.root, bg=BG)
         body.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -306,6 +350,17 @@ class App:
         except Exception:
             return "..."
 
+    def _overview_text(self):
+        chs = discover_channels()
+        if not chs:
+            return "(chua phat hien kenh nao)"
+        out = [f"{'KENH':<11}{'NGON NGU':<13}{'TOKEN':<8}CMT DA LAM"]
+        out.append("-" * 44)
+        for c in chs:
+            tok = "✓" if has_token(c) else "✗"
+            out.append(f"{c:<11}{channel_lang(c):<13}{tok:<8}{replied_count(c)}")
+        return "\n".join(out)
+
     def refresh(self):
         try:
             self._tick += 1
@@ -355,6 +410,12 @@ class App:
 
             nch, ntok, nkey = count_status()
             self.lbl_sum.config(text=f"{nch} kenh | {ntok} token | {nkey} key | RAM {self._ram_txt}")
+
+            # Bang tong quan cac kenh
+            self.txt_over.config(state="normal")
+            self.txt_over.delete("1.0", "end")
+            self.txt_over.insert("1.0", self._overview_text())
+            self.txt_over.config(state="disabled")
 
             trim_log(DANG_LOG)
             trim_log(CMT_LOG)
