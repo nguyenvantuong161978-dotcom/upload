@@ -193,6 +193,45 @@ def replied_count(name):
         return 0
 
 
+CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+
+
+def _dedupe(keys):
+    seen, out = set(), []
+    for k in keys:
+        k = (k or "").strip()
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
+
+
+def load_gemini_keys():
+    """Tat ca key Gemini hien co (gop GEMINI_API_KEYS + GEMINI_API_KEY)."""
+    try:
+        cfg = json.load(open(CONFIG_PATH, encoding="utf-8"))
+        keys = list(cfg.get("GEMINI_API_KEYS", []) or [])
+        if cfg.get("GEMINI_API_KEY"):
+            keys.append(cfg["GEMINI_API_KEY"])
+        return _dedupe(keys)
+    except Exception:
+        return []
+
+
+def save_gemini_keys(keys):
+    """Ghi danh sach key vao config.json (gop het vao GEMINI_API_KEYS)."""
+    try:
+        cfg = json.load(open(CONFIG_PATH, encoding="utf-8")) if os.path.isfile(CONFIG_PATH) else {}
+    except Exception:
+        cfg = {}
+    out = _dedupe(keys)
+    cfg["GEMINI_API_KEYS"] = out
+    cfg["GEMINI_API_KEY"] = ""   # gop het vao list cho gon
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return len(out)
+
+
 BG = "#1e1e2e"
 PANEL = "#11111b"
 FG = "#cdd6f4"
@@ -237,6 +276,7 @@ class App:
             ("↻ Restart Dang", self.restart_dang, BLUE),
             ("↻ Restart Cmt", self.restart_cmt, BLUE),
             ("🔑 Lay Token/Key", self.do_setup, YELLOW),
+            ("✎ Key Gemini", self.do_keys, GREEN),
         ]:
             tk.Button(btns, text=txt, command=cmd, bg=clr, fg=BG,
                       font=("Segoe UI", 9, "bold"), relief="flat", padx=8).pack(side="left", padx=3)
@@ -318,6 +358,36 @@ class App:
         except Exception:
             pass
         self.last_temp_clean = time.time()
+
+    def do_keys(self):
+        # Hop thoai nhap/sua/xoa key Gemini -> luu config.json -> restart cmt de ap dung
+        win = tk.Toplevel(self.root)
+        win.title("Quan ly Key Gemini")
+        win.configure(bg=BG)
+        win.geometry("580x430")
+        tk.Label(win, text="Moi key 1 dong. Them key moi / xoa key chet / sua roi bam LUU.\n"
+                           "Luu xong cmt se tu restart de dung key moi.",
+                 font=("Segoe UI", 9), fg=FG, bg=BG, justify="left").pack(anchor="w", padx=10, pady=8)
+        box = tk.Text(win, bg=PANEL, fg=FG, font=("Consolas", 9), relief="flat", wrap="none")
+        box.pack(fill="both", expand=True, padx=10)
+        box.insert("1.0", "\n".join(load_gemini_keys()))
+        bar = tk.Frame(win, bg=BG)
+        bar.pack(fill="x", padx=10, pady=8)
+        info = tk.Label(bar, text="", fg=GREEN, bg=BG, font=("Segoe UI", 9))
+        info.pack(side="left")
+
+        def do_save():
+            n = save_gemini_keys(box.get("1.0", "end").splitlines())
+            info.config(text=f"Da luu {n} key. Restart cmt...")
+            self.restart_cmt()
+            win.after(900, win.destroy)
+
+        tk.Button(bar, text="LUU", command=do_save, bg=GREEN, fg=BG,
+                  font=("Segoe UI", 9, "bold"), relief="flat", padx=12).pack(side="right", padx=3)
+        tk.Button(bar, text="Dong", command=win.destroy, bg=RED, fg=BG,
+                  font=("Segoe UI", 9, "bold"), relief="flat", padx=12).pack(side="right", padx=3)
+        win.transient(self.root)
+        win.grab_set()
 
     # ---- hien thi ----
     def _alive(self, p):
