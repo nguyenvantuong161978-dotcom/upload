@@ -49,6 +49,20 @@ try:
 except Exception:
     pass
 
+# Console: TAT QuickEdit (click nham vao cmd KHONG con lam treo script) + xep goc tren TRAI
+try:
+    _k = ctypes.windll.kernel32
+    _hin = _k.GetStdHandle(-10)            # STD_INPUT_HANDLE
+    _m = ctypes.c_uint()
+    if _k.GetConsoleMode(_hin, ctypes.byref(_m)):
+        # bo ENABLE_QUICK_EDIT_MODE (0x40), them ENABLE_EXTENDED_FLAGS (0x80)
+        _k.SetConsoleMode(_hin, (_m.value & ~0x0040) | 0x0080)
+    _hwnd = _k.GetConsoleWindow()
+    if _hwnd:
+        ctypes.windll.user32.MoveWindow(_hwnd, 0, 0, 770, 430, True)
+except Exception:
+    pass
+
 
 # ┌──────────────────────────────────────────────────────────────────────┐
 # │ S2 - CẤU HÌNH KÊNH & ĐƯỜNG DẪN (đọc từ config.json)               │

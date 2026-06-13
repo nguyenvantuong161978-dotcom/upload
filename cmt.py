@@ -26,6 +26,20 @@ try:
 except Exception:
     pass
 
+# Console: TAT QuickEdit (click nham vao cmd KHONG con lam treo script) + xep goc tren PHAI
+try:
+    import ctypes as _ct
+    _k = _ct.windll.kernel32
+    _hin = _k.GetStdHandle(-10)            # STD_INPUT_HANDLE
+    _m = _ct.c_uint()
+    if _k.GetConsoleMode(_hin, _ct.byref(_m)):
+        _k.SetConsoleMode(_hin, (_m.value & ~0x0040) | 0x0080)
+    _hw = _k.GetConsoleWindow()
+    if _hw:
+        _ct.windll.user32.MoveWindow(_hw, 780, 0, 770, 430, True)
+except Exception:
+    pass
+
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
