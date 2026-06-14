@@ -1380,17 +1380,32 @@ def file_dialog_select_thumbnail():
     pyautogui.press('enter'); rsleep("long")
 
 
-def file_dialog_select_srt():
-    """Hộp thoại Open: chọn file SRT."""
+def file_dialog_select_srt(target_folder):
+    """Hộp thoại Open: vào đúng thư mục mã rồi chọn file SRT (giống hàm chọn mp4)."""
     logging.info("Tim va click 'filename.png' truoc khi nhap SRT...")
     if not wait_and_click_image(TEMPLATE_FILENAME,
                                 timeout_sec=int(r(*HUMAN.click_timeout)),
                                 confidence=r(*HUMAN.click_confidence)):
-        logging.warning("Khong tim thay 'filename.png', tiep tuc nhap truc tiep")
-    rsleep("small")
+        logging.warning("Khong tim thay 'filename.png', tiep tuc voi Ctrl+L")
+    rsleep("medium")
 
-    paste_text('*.srt'); rsleep("tiny")
-    pyautogui.press('enter'); rsleep("small")
+    # Ctrl+L → dán đường dẫn thư mục mã → Enter (vào đúng folder, tránh lọc nhầm folder khác)
+    pyautogui.hotkey('ctrl', 'l'); rsleep("tiny")
+    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
+    paste_text(target_folder)
+    pyautogui.press('enter'); rsleep("medium")
+
+    # Alt+N → focus ô File Name → dán *.srt → Enter
+    pyautogui.keyDown('alt')
+    pyautogui.press('n')
+    pyautogui.keyUp('alt')
+    rsleep("small")
+    pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")
+    paste_text('*.srt')
+    rsleep("small")
+    pyautogui.press('enter'); rsleep("long")
+
+    # Chọn file đầu và mở
     pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
     pyautogui.hotkey('shift', 'tab'); rsleep("tiny")
     pyautogui.press('space'); rsleep("medium")
@@ -1480,7 +1495,7 @@ def handle_metadata_flow(active_row):
 # │ S11 - BƯỚC 2: PHỤ ĐỀ, END SCREEN, THẺ (CARDS)                      │
 # └──────────────────────────────────────────────────────────────────────┘
 
-def handle_step2_flow(active_row):
+def handle_step2_flow(active_row, target_folder):
     """
     Bước 2 gồm 4 phần:
     A) Upload phụ đề SRT
@@ -1506,13 +1521,15 @@ def handle_step2_flow(active_row):
     # Lặp click để focus đúng vùng SRT
     MAX_TRIES = 5
     for attempt in range(1, MAX_TRIES + 1):
-        logging.info(f"[B2 focus try {attempt}/{MAX_TRIES}] click buoc2 -> Tab*4 -> Enter")
-        move_click(pos_buoc2.x, pos_buoc2.y, img_size=_img_size(pos_buoc2)); rsleep("small")
+        logging.info(f"[B2 focus try {attempt}/{MAX_TRIES}] click buoc2 -> cho on dinh 5-10s -> Tab*4 -> Enter")
+        move_click(pos_buoc2.x, pos_buoc2.y, img_size=_img_size(pos_buoc2))
+        time.sleep(rand(5, 10))   # cho UI on dinh sau click buoc2 (VM yeu/mang cham) roi moi Tab*4
         press_key('tab', 4, "tiny")
         pyautogui.press('enter'); rsleep("small")
 
         logging.info("Kiem tra 'taiteplen.png' sau Enter...")
-        pos_tlp = wait_image(TEMPLATE_TAITEPLEN, timeout_sec=10, confidence=CLICK_CONFIDENCE)
+        # Cho it nhat 30s (cu 10s) - VM yeu/mang cham panel phu de load lau hon sau Enter
+        pos_tlp = wait_image(TEMPLATE_TAITEPLEN, timeout_sec=30, confidence=CLICK_CONFIDENCE)
         if pos_tlp:
             logging.info("DA thay 'taiteplen.png' -> tiep tuc.")
             break
@@ -1542,20 +1559,24 @@ def handle_step2_flow(active_row):
     move_click(pos_tlp.x, pos_tlp.y, img_size=_img_size(pos_tlp))
     rsleep("long")
 
-    logging.info("Tim va click 'tieptuc.png' de mo hop thoai Open (SRT)...")
-    if not wait_and_click_image(TEMPLATE_TIEPTUC, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
+    logging.info("Tim 'tieptuc.png' (delay 1 chut truoc khi click cho on dinh)...")
+    pos_tt = wait_image(TEMPLATE_TIEPTUC, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if pos_tt:
+        time.sleep(rand(3, 6))   # VM yeu: cho nut on dinh roi moi click, tranh click hut
+        move_click(pos_tt.x, pos_tt.y, img_size=_img_size(pos_tt))
+        rsleep("long")
+    else:
         logging.warning("Khong thay 'tieptuc.png' -> fallback Tab*3 roi Enter.")
         press_key('tab', 3, "tiny")
         pyautogui.press('enter'); rsleep("long")
-    else:
-        rsleep("long")
 
     # Hộp thoại Open: chọn SRT
     pos_open = wait_image(TEMPLATE_OPEN_READY, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
     if not pos_open:
         logging.error("Khong thay open.png khi them SRT.")
         return
-    file_dialog_select_srt()
+    time.sleep(rand(3, 6))   # delay 1 chut cho hop thoai Open on dinh truoc khi chon file SRT
+    file_dialog_select_srt(target_folder)
 
     # Chờ xong.png rồi click
     logging.info("Cho 'xong.png' sau khi upload SRT...")
@@ -1563,8 +1584,9 @@ def handle_step2_flow(active_row):
     if not pos_done:
         logging.error("Khong thay xong.png sau khi them SRT.")
         return
-    rsleep("medium")
-    move_click(pos_done.x, pos_done.y, img_size=_img_size(pos_done)); rsleep("medium")
+    time.sleep(rand(4, 8))   # VM yeu: cho 'xong.png' on dinh roi moi click
+    move_click(pos_done.x, pos_done.y, img_size=_img_size(pos_done))
+    time.sleep(rand(4, 8))   # delay sau khi click 'xong' roi moi lam tiep (sang End Screen)
 
     # ─── B) THIẾT LẬP END SCREEN ───
 
@@ -2112,7 +2134,7 @@ def post_channel(ch, ready_codes, input_rows, client):
             logging.info("Khong thay doitai.png -> video da san sang, vao Buoc 2 binh thuong.")
 
         if not skip_step2:
-            handle_step2_flow(active_row)
+            handle_step2_flow(active_row, target_folder)
         else:
             logging.info("Bo qua Buoc 2 -> click 'Che do hien thi' de sang hen lich...")
             wait_and_click_image(TEMPLATE_CHEDO_HIEN_THI,
