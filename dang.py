@@ -803,6 +803,43 @@ def verify_local_matches_server(local_folder: str, server_folder: str) -> bool:
     return True
 
 
+def get_mp4_duration(file_path):
+    """Tra ve thoi luong mp4 (giay, float) bang ffprobe; None neu loi."""
+    _ffprobe = 'ffprobe'
+    _local = os.path.join(BASE_DIR, "ffmpeg", "bin", "ffprobe.exe")
+    if os.path.isfile(_local):
+        _ffprobe = _local
+    try:
+        result = subprocess.run(
+            [_ffprobe, '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'csv=p=0', file_path],
+            capture_output=True, text=True, errors="replace", timeout=120)
+        if result.returncode == 0 and result.stdout.strip():
+            d = float(result.stdout.strip())
+            return d if d > 0 else None
+    except Exception as e:
+        logging.warning(f"get_mp4_duration loi: {e}")
+    return None
+
+
+def _fmt_card_ts(sec):
+    """Giu DINH DANG CU (vd '10:00:00'): chuoi 3 phan 'MM:SS:00' (MM=phut, SS=giay).
+    O timestamp the YouTube doc 2 phan dau = PHUT:GIAY (nen '10:00:00' = 10 phut)."""
+    sec = max(0, int(round(sec)))
+    return f"{sec // 60:02d}:{sec % 60:02d}:00"
+
+
+def compute_card_timestamps(duration, n=5, tail_gap=10):
+    """n moc deu nhau trong 50% CUOI video; moc cuoi cach ket thuc tail_gap giay.
+    Tra ve dinh dang cu 'MM:SS:00' (vd 300s -> 02:30:00, 03:05:00, ... , 04:50:00)."""
+    t_start = duration * 0.5
+    t_last = duration - tail_gap
+    if t_last <= t_start:                 # video qua ngan
+        t_last = max(t_start, duration - 1)
+    step = (t_last - t_start) / (n - 1) if n > 1 else 0
+    return [_fmt_card_ts(t_start + i * step) for i in range(n)]
+
+
 def verify_mp4_readable(file_path):
     """Kiểm tra file mp4 có chạy được không.
     1) ffprobe (nếu có): kiểm tra duration > 0 → chắc chắn nhất
@@ -1585,6 +1622,7 @@ def handle_step2_flow(active_row, target_folder):
     if not pos_tlp:
         logging.error("Khong thay 'taiteplen.png'.")
         return
+    time.sleep(rand(8, 12))   # thay taiteplen roi delay ~10s cho on dinh moi click (VM yeu)
     move_click(pos_tlp.x, pos_tlp.y, img_size=_img_size(pos_tlp))
     rsleep("long")
 
@@ -1613,9 +1651,9 @@ def handle_step2_flow(active_row, target_folder):
     if not pos_done:
         logging.error("Khong thay xong.png sau khi them SRT.")
         return
-    time.sleep(rand(4, 8))   # VM yeu: cho 'xong.png' on dinh roi moi click
+    time.sleep(rand(8, 12))   # VM yeu: thay 'xong.png' roi delay ~10s moi click
     move_click(pos_done.x, pos_done.y, img_size=_img_size(pos_done))
-    time.sleep(rand(4, 8))   # delay sau khi click 'xong' roi moi lam tiep (sang End Screen)
+    time.sleep(rand(8, 12))   # delay ~10s sau khi click 'xong' roi moi sang End Screen
 
     # ─── B) THIẾT LẬP END SCREEN ───
 
@@ -1772,6 +1810,7 @@ def handle_step2_flow(active_row, target_folder):
         if not click_the_button(step_tag=f"timestamp_{step_label}"):
             return False
         press_key('tab', 5, "tiny")
+        pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")   # xoa o cu truoc khi dan timestamp
         paste_text(ts_value); rsleep("tiny")
         pyautogui.press('tab'); rsleep("small")
         return True
@@ -1786,12 +1825,18 @@ def handle_step2_flow(active_row, target_folder):
     add_single_video_card_from_column(active_row, IDX_LINK_BF, col_name="BF")
     add_single_video_card_from_column(active_row, IDX_LINK_BG, col_name="BG")
 
-    # Thêm timestamps
-    add_timestamp_hhmmss("30:00:00", "30h")
-    add_timestamp_hhmmss("10:00:00", "10m")
-    add_timestamp_hhmmss("15:00:00", "15m")
-    add_timestamp_hhmmss("20:00:00", "20m")
-    add_timestamp_hhmmss("25:00:00", "25m")
+    # Thêm timestamps — tính ĐỘNG từ thời lượng mp4: 5 mốc đều trong 50% cuối, mốc cuối cách kết thúc 10s
+    import glob
+    _mp4s = glob.glob(os.path.join(target_folder, "*.mp4"))
+    _dur = get_mp4_duration(_mp4s[0]) if _mp4s else None
+    if _dur:
+        ts_list = compute_card_timestamps(_dur, n=5, tail_gap=10)
+        logging.info(f"Timestamp the (thoi luong {_dur:.0f}s): {ts_list}")
+    else:
+        ts_list = ["30:00:00", "10:00:00", "15:00:00", "20:00:00", "25:00:00"]
+        logging.warning("Khong doc duoc thoi luong mp4 -> dung timestamp mac dinh cu.")
+    for _i, _ts in enumerate(ts_list, 1):
+        add_timestamp_hhmmss(_ts, f"ts{_i}")
 
     # Lưu Cards
     rsleep("small")
