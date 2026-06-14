@@ -257,6 +257,30 @@ def save_gemini_keys(keys):
     return len(out)
 
 
+# ---- Update tu GitHub ----
+GITHUB_ZIP = "https://github.com/nguyenvantuong161978-dotcom/upload/archive/refs/heads/main.zip"
+UPDATE_FILES = ["cmt.py", "dang.py", "tool_gui.py", "stats.py", "run.bat", "update.bat",
+                "setup.bat", "lay_token.bat", "VERSION", "tkinter-embed-py311.zip"]
+
+
+def _ps(cmd):
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command", cmd],
+                       capture_output=True, creationflags=CREATE_NO_WINDOW)
+    except Exception:
+        pass
+
+
+def _set_ipv4(enable):
+    verb = "Enable" if enable else "Disable"
+    _ps(f"Get-NetAdapter | ForEach-Object {{ {verb}-NetAdapterBinding -Name $_.Name "
+        f"-ComponentID ms_tcpip -ErrorAction SilentlyContinue }}")
+    if enable:
+        _ps("Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object { "
+            "Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex "
+            "-ServerAddresses 8.8.8.8 -ErrorAction SilentlyContinue }")
+
+
 BG = "#1e1e2e"
 PANEL = "#11111b"
 FG = "#cdd6f4"
@@ -281,6 +305,8 @@ class App:
         self.last_temp_clean = time.time()
         self._tick = 0
         self._ram_txt = ""
+        self._updating = False
+        self._update_msg = ""
 
         self.root = tk.Tk()
         self.root.title("TOOL DIEU KHIEN — Dang + Cmt")
@@ -302,6 +328,7 @@ class App:
             ("↻ Restart Cmt", self.restart_cmt, BLUE),
             ("🔑 Lay Token/Key", self.do_setup, YELLOW),
             ("✎ Key Gemini", self.do_keys, GREEN),
+            ("⬇ Update", self.do_update, "#fab387"),
         ]:
             tk.Button(btns, text=txt, command=cmd, bg=clr, fg=BG,
                       font=("Segoe UI", 9, "bold"), relief="flat", padx=8).pack(side="left", padx=3)
@@ -414,6 +441,73 @@ class App:
         win.transient(self.root)
         win.grab_set()
 
+    def do_update(self):
+        # Cap nhat code moi tu GitHub -> tu khoi dong lai GUI voi code moi
+        if self._updating:
+            return
+        self._updating = True
+        self._update_msg = "Chuan bi cap nhat..."
+        import threading
+        threading.Thread(target=self._run_update, daemon=True).start()
+
+    def _run_update(self):
+        import urllib.request, zipfile, tempfile, shutil
+        try:
+            self._update_msg = "Dung dang/cmt..."
+            self.stop_all()
+            self._update_msg = "Bat IPv4 de tai..."
+            _set_ipv4(True)
+            time.sleep(7)
+            self._update_msg = "Tai code moi tu GitHub..."
+            tmp = tempfile.gettempdir()
+            zp = os.path.join(tmp, "tl_update.zip")
+            ex = os.path.join(tmp, "tl_update_ex")
+            urllib.request.urlretrieve(GITHUB_ZIP, zp)
+            if os.path.isdir(ex):
+                shutil.rmtree(ex, ignore_errors=True)
+            with zipfile.ZipFile(zp) as z:
+                z.extractall(ex)
+            subdirs = [os.path.join(ex, d) for d in os.listdir(ex) if os.path.isdir(os.path.join(ex, d))]
+            if not subdirs:
+                raise Exception("ZIP rong")
+            src = subdirs[0]
+            self._update_msg = "Copy file moi..."
+            for f in UPDATE_FILES:
+                sp = os.path.join(src, f)
+                if os.path.isfile(sp):
+                    shutil.copy2(sp, os.path.join(BASE_DIR, f))
+            si = os.path.join(src, "icon")
+            if os.path.isdir(si):
+                di = os.path.join(BASE_DIR, "icon")
+                if os.path.isdir(di):
+                    shutil.rmtree(di, ignore_errors=True)
+                shutil.copytree(si, di)
+            # Cay Tcl/Tk neu chua co
+            if not os.path.isfile(os.path.join(BASE_DIR, "python", "tkinter", "__init__.py")):
+                zt = os.path.join(BASE_DIR, "tkinter-embed-py311.zip")
+                if os.path.isfile(zt):
+                    with zipfile.ZipFile(zt) as z:
+                        z.extractall(os.path.join(BASE_DIR, "python"))
+            self._update_msg = "Tat IPv4..."
+            _set_ipv4(False)
+            time.sleep(2)
+            self._update_msg = "Khoi dong lai voi code moi..."
+            time.sleep(1)
+            # Mo GUI moi (doc tool_gui.py vua cap nhat) roi thoat tien trinh nay
+            subprocess.Popen([os.path.join(BASE_DIR, "python", "pythonw.exe"), "tool_gui.py"],
+                             cwd=BASE_DIR)
+            time.sleep(1.5)
+            os._exit(0)
+        except Exception as e:
+            self._update_msg = f"Update LOI: {repr(e)[:70]}"
+            try:
+                _set_ipv4(False)
+            except Exception:
+                pass
+            time.sleep(2)
+            self._updating = False
+            self.start_all()   # chay lai binh thuong
+
     # ---- hien thi ----
     def _alive(self, p):
         return p is not None and p.poll() is None
@@ -465,6 +559,13 @@ class App:
         try:
             self._tick += 1
             now = time.time()
+
+            # Dang cap nhat -> hien tien trinh, khong lam gi khac
+            if self._updating:
+                self.lbl_dang.config(text="⬇ DANG CAP NHAT: " + self._update_msg, fg=YELLOW)
+                self.lbl_cmt.config(text="(dung khong dong cua so)", fg=YELLOW)
+                self.root.after(700, self.refresh)
+                return
 
             # 1) Setup xong (cua so setup da dong) -> tu chay lai dang/cmt
             if self.proc_setup is not None and self.proc_setup.poll() is not None:
