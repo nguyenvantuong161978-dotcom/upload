@@ -103,6 +103,26 @@ def kill_all_scripts():
     subprocess.run('taskkill /F /IM python.exe /T', shell=True, capture_output=True)
 
 
+def force_kill_browsers():
+    """Force-kill (cung) tat ca browser - dung khi can chac chan chet (vd truoc khi bat IPv4)."""
+    for b in ["chrome.exe", "msedge.exe", "firefox.exe"]:
+        subprocess.run(f'taskkill /F /IM "{b}" /T', shell=True, capture_output=True)
+    for exe in discover_channel_exes():
+        subprocess.run(f'taskkill /F /IM "{exe}" /T', shell=True, capture_output=True)
+
+
+def browsers_alive():
+    """Dem tien trinh browser con song (chrome/msedge/firefox + browser kenh)."""
+    names = [b.lower() for b in ["chrome.exe", "msedge.exe", "firefox.exe"]]
+    names += [e.lower() for e in discover_channel_exes()]
+    try:
+        out = subprocess.run('tasklist /fo csv /nh', shell=True, capture_output=True,
+                             text=True, errors="replace").stdout.lower()
+        return sum(out.count(n) for n in names)
+    except Exception:
+        return 0
+
+
 def launch_hidden(script, log_path):
     """Chay 1 script AN console, log do ra file. Tra ve Popen."""
     try:
@@ -455,6 +475,14 @@ class App:
         try:
             self._update_msg = "Dung dang/cmt..."
             self.stop_all()
+            # Dam bao TAT HET browser chet han TRUOC khi bat IPv4 (tranh chrome dinh IPv4 -> lo anti-detect)
+            self._update_msg = "Tat het browser truoc khi bat IPv4..."
+            for _ in range(8):
+                kill_all_scripts()
+                force_kill_browsers()
+                if browsers_alive() == 0:
+                    break
+                time.sleep(1)
             self._update_msg = "Bat IPv4 de tai..."
             _set_ipv4(True)
             time.sleep(7)
