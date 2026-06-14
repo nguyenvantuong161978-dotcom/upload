@@ -698,7 +698,7 @@ def smb_connect():
         # Retry kết nối SMB tối đa 3 lần
         for attempt in range(1, 4):
             cmd = f'net use {SMB_DRIVE} "{SMB_SERVER}" /user:{SMB_USER} {SMB_PASS} /persistent:no'
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, errors="replace", timeout=60)
             if result.returncode == 0:
                 break
             logging.warning(f"SMB lan {attempt}/3 loi: {result.stderr.strip()}")
@@ -826,7 +826,7 @@ def verify_mp4_readable(file_path):
             '-show_entries', 'format=duration',
             '-of', 'csv=p=0',
             file_path
-        ], capture_output=True, text=True, timeout=120)
+        ], capture_output=True, text=True, errors="replace", timeout=120)
 
         if result.returncode == 0 and result.stdout.strip():
             duration = float(result.stdout.strip())
@@ -953,7 +953,7 @@ def _copy_robocopy(src_dir, dst_dir, filename):
         '/NJH', '/NJS',     # không hiện header/summary
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
+        result = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=7200)
         # Robocopy exit code: 0=no copy needed, 1=copied OK, >=8=error
         if result.returncode >= 8:
             logging.warning(f"  Robocopy loi (code {result.returncode}):")
