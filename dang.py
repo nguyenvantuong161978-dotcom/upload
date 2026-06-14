@@ -175,6 +175,8 @@ TEMPLATE_FILENAME         = os.path.join(ICON_DIR, "filename.png")
 TEMPLATE_NEXT_BTN         = os.path.join(ICON_DIR, "tiep.png")
 TEMPLATE_DANHSACHPHAT     = os.path.join(ICON_DIR, "danhsachphat.png")
 TEMPLATE_THU_NGHIEM       = os.path.join(ICON_DIR, "thunghiem.png")  # A/B test thumbnail
+TEMPLATE_HIEN_THEM        = os.path.join(ICON_DIR, "hienthem.png")   # nut "Hien them"
+TEMPLATE_CO               = os.path.join(ICON_DIR, "co.png")         # radio "Co" - co dung AI
 
 # Bước 2 - Phụ đề & End Screen
 TEMPLATE_DOI_TAI          = os.path.join(ICON_DIR, "doitai.png")   # đang tải video, chờ biến mất
@@ -1479,6 +1481,33 @@ def handle_metadata_flow(active_row):
         pyautogui.press('enter'); rsleep("small")
         press_key('tab', 2, "tiny")
         pyautogui.press('enter'); rsleep("small")
+
+    # === Khai báo nội dung AI (sau playlist, trước khi sang Bước 2) ===
+    # VM cham/mang cham: thao tac tu tu, co nghi + random cho giong nguoi
+    rsleep("medium")
+    # Tab x2 roi End de chac chan cuon xuong cuoi trang
+    press_key('tab', 2, "tiny")
+    pyautogui.press('end'); rsleep("medium")
+
+    logging.info("Tim va click 'hienthem.png' (Hien them)...")
+    if wait_and_click_image(TEMPLATE_HIEN_THEM,
+                            timeout_sec=int(r(*HUMAN.click_timeout)),
+                            confidence=r(*HUMAN.click_confidence)):
+        rsleep("long")
+        # Ctrl+F tim phan khai bao AI roi cuon toi do
+        logging.info("Ctrl+F tim phan khai bao AI...")
+        pyautogui.hotkey('ctrl', 'f'); rsleep("small")
+        paste_text("Bạn có sử dụng AI để tạo hoặc chỉnh sửa nội dung")
+        rsleep("medium")
+        # Click "Co" - khai bao co dung AI
+        logging.info("Tim va click 'co.png' (Co dung AI)...")
+        if not wait_and_click_image(TEMPLATE_CO,
+                                    timeout_sec=int(r(*HUMAN.click_timeout)),
+                                    confidence=r(*HUMAN.click_confidence)):
+            logging.warning("Khong thay 'co.png' -> bo qua khai bao AI.")
+        rsleep("medium")
+    else:
+        logging.warning("Khong thay 'hienthem.png' -> bo qua khai bao AI.")
 
     # === Click TIẾP để sang Bước 2 ===
     logging.info("Tim va click nut 'Tiep' de qua Buoc 2...")
