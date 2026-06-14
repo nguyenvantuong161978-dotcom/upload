@@ -277,6 +277,15 @@ def save_gemini_keys(keys):
     return len(out)
 
 
+def read_version():
+    """Doc so version tu file VERSION (tu dong cap nhat khi code len ban moi)."""
+    try:
+        with open(os.path.join(BASE_DIR, "VERSION"), encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return "?"
+
+
 # ---- Update tu GitHub ----
 GITHUB_ZIP = "https://github.com/nguyenvantuong161978-dotcom/upload/archive/refs/heads/main.zip"
 UPDATE_FILES = ["cmt.py", "dang.py", "tool_gui.py", "stats.py", "run.bat", "update.bat",
@@ -329,7 +338,7 @@ class App:
         self._update_msg = ""
 
         self.root = tk.Tk()
-        self.root.title("TOOL DIEU KHIEN — Dang + Cmt")
+        self.root.title(f"TOOL DIEU KHIEN — Dang + Cmt   v{read_version()}")
         self.root.configure(bg=BG)
         self.root.geometry("1040x620")
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -638,7 +647,7 @@ class App:
                                     fg=GREEN if ca else RED)
 
             nch, ntok, nkey = count_status()
-            self.lbl_sum.config(text=f"{nch} kenh | {ntok} token | {nkey} key | RAM {self._ram_txt}")
+            self.lbl_sum.config(text=f"v{read_version()} | {nch} kenh | {ntok} token | {nkey} key | RAM {self._ram_txt}")
 
             # Bang tong quan cac kenh
             self.txt_over.config(state="normal")
