@@ -286,6 +286,39 @@ def read_version():
         return "?"
 
 
+# ---- Khoa chi 1 instance GUI chay cung luc ----
+_SINGLE_INSTANCE_MUTEX = None
+
+
+def acquire_single_instance():
+    """Giu mutex Windows. True = OK (giu khoa); False = da co GUI khac dang chay."""
+    global _SINGLE_INSTANCE_MUTEX
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.CreateMutexW(None, False, "TL_TOOL_GUI_SINGLETON")
+        if k.GetLastError() == 183:        # ERROR_ALREADY_EXISTS
+            if h:
+                k.CloseHandle(h)
+            return False
+        _SINGLE_INSTANCE_MUTEX = h
+        return True
+    except Exception:
+        return True                        # loi -> van cho chay, khong chan oan
+
+
+def release_single_instance():
+    """Nha khoa (truoc khi Update tu mo lai GUI moi)."""
+    global _SINGLE_INSTANCE_MUTEX
+    try:
+        if _SINGLE_INSTANCE_MUTEX:
+            import ctypes
+            ctypes.windll.kernel32.CloseHandle(_SINGLE_INSTANCE_MUTEX)
+            _SINGLE_INSTANCE_MUTEX = None
+    except Exception:
+        pass
+
+
 # ---- Update tu GitHub ----
 GITHUB_ZIP = "https://github.com/nguyenvantuong161978-dotcom/upload/archive/refs/heads/main.zip"
 UPDATE_FILES = ["cmt.py", "dang.py", "tool_gui.py", "stats.py", "run.bat", "update.bat",
@@ -530,6 +563,9 @@ class App:
             time.sleep(2)
             self._update_msg = "Khoi dong lai voi code moi..."
             time.sleep(1)
+            # Nha khoa single-instance de GUI moi lay duoc
+            release_single_instance()
+            time.sleep(0.5)
             # Mo GUI moi (doc tool_gui.py vua cap nhat) roi thoat tien trinh nay
             subprocess.Popen([os.path.join(BASE_DIR, "python", "pythonw.exe"), "tool_gui.py"],
                              cwd=BASE_DIR)
@@ -687,4 +723,14 @@ class App:
 
 
 if __name__ == "__main__":
+    if not acquire_single_instance():
+        try:
+            import tkinter.messagebox as _mb
+            _r = tk.Tk()
+            _r.withdraw()
+            _mb.showinfo("Tool dang chay", "Tool da chay roi (chi 1 phien ban). Khong mo them.")
+            _r.destroy()
+        except Exception:
+            pass
+        os._exit(0)
     App()

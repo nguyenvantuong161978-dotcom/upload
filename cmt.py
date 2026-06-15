@@ -70,6 +70,7 @@ REPLY_DELAY_MAX = 180            # giay (toi da)
 RUN_INTERVAL_HOURS = 12          # Production: chu ky chay lai (co them jitter ngau nhien)
 
 # Pool API sinh reply (OpenAI-compatible, qua IPv6)
+USE_POOL = False          # TAT pool -> chi dung Gemini de tra loi cmt (pool hay loi 401)
 REPLY_API_BASE = "http://[2001:ee0:b004:3001::10]:8318/v1"
 REPLY_API_KEY = "sk_cliproxy_local"
 REPLY_MODEL = "claude-sonnet-4-6"
@@ -744,7 +745,9 @@ def _reply_via_gemini(prompt_text, key):
 def gen_reply_with_prompt(prompt_text):
     """Sinh reply: POOL truoc; loi thi XOAY VONG cac GEMINI key (du phong, chia quota).
     Het tat ca -> None (bo qua comment, khong spam)."""
-    providers = [("pool", _reply_via_pool)]
+    providers = []
+    if USE_POOL:
+        providers.append(("pool", _reply_via_pool))
     for i, gk in enumerate(_all_gemini_keys(), 1):
         providers.append((f"gemini#{i}", lambda p, k=gk: _reply_via_gemini(p, k)))
 
