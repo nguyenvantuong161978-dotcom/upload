@@ -103,6 +103,21 @@ def kill_all_scripts():
     subprocess.run('taskkill /F /IM python.exe /T', shell=True, capture_output=True)
 
 
+def kill_other_python():
+    """Kill cac python.exe KHAC (dang/cmt) TRU chinh tien trinh hien tai.
+    Dung cho updater (chay bang python.exe) de khong tu giet minh."""
+    me = os.getpid()
+    try:
+        out = subprocess.run('tasklist /fi "imagename eq python.exe" /fo csv /nh',
+                             shell=True, capture_output=True, text=True, errors="replace").stdout
+        for line in out.splitlines():
+            parts = [p.strip(' "') for p in line.split('","')]
+            if len(parts) >= 2 and parts[1].isdigit() and int(parts[1]) != me:
+                subprocess.run(f'taskkill /F /PID {parts[1]} /T', shell=True, capture_output=True)
+    except Exception:
+        pass
+
+
 def force_kill_browsers():
     """Force-kill (cung) tat ca browser - dung khi can chac chan chet (vd truoc khi bat IPv4)."""
     for b in ["chrome.exe", "msedge.exe", "firefox.exe"]:
@@ -343,6 +358,76 @@ def _set_ipv4(enable):
             "-ServerAddresses 8.8.8.8 -ErrorAction SilentlyContinue }")
 
 
+def run_updater():
+    """Chay o TIEN TRINH RIENG (console hien, GUI da dong) -> tai code moi -> mo lai GUI.
+    Tach khoi GUI de GUI KHONG bi 'not responding' luc cap nhat."""
+    import urllib.request, zipfile, tempfile, shutil
+
+    def say(m):
+        print("[UPDATE] " + m, flush=True)
+
+    def open_gui():
+        try:
+            subprocess.Popen([os.path.join(BASE_DIR, "python", "pythonw.exe"), "tool_gui.py"], cwd=BASE_DIR)
+        except Exception as e:
+            say("Mo lai GUI loi: " + repr(e)[:80])
+
+    try:
+        say("Cho GUI cu dong...")
+        time.sleep(3)
+        say("Dung dang/cmt + dong het browser...")
+        kill_other_python()          # KHONG dung kill_all_scripts (se tu giet updater)
+        for _ in range(8):
+            force_kill_browsers()
+            if browsers_alive() == 0:
+                break
+            time.sleep(1)
+        say("Bat IPv4 de tai...")
+        _set_ipv4(True)
+        time.sleep(7)
+        say("Tai code moi tu GitHub...")
+        tmp = tempfile.gettempdir()
+        zp = os.path.join(tmp, "tl_update.zip")
+        ex = os.path.join(tmp, "tl_update_ex")
+        urllib.request.urlretrieve(GITHUB_ZIP, zp)
+        if os.path.isdir(ex):
+            shutil.rmtree(ex, ignore_errors=True)
+        with zipfile.ZipFile(zp) as z:
+            z.extractall(ex)
+        subdirs = [os.path.join(ex, d) for d in os.listdir(ex) if os.path.isdir(os.path.join(ex, d))]
+        if not subdirs:
+            raise Exception("ZIP rong")
+        src = subdirs[0]
+        say("Copy file moi...")
+        for f in UPDATE_FILES:
+            sp = os.path.join(src, f)
+            if os.path.isfile(sp):
+                shutil.copy2(sp, os.path.join(BASE_DIR, f))
+        si = os.path.join(src, "icon")
+        if os.path.isdir(si):
+            shutil.copytree(si, os.path.join(BASE_DIR, "icon"), dirs_exist_ok=True)
+        if not os.path.isfile(os.path.join(BASE_DIR, "python", "tkinter", "__init__.py")):
+            zt = os.path.join(BASE_DIR, "tkinter-embed-py311.zip")
+            if os.path.isfile(zt):
+                with zipfile.ZipFile(zt) as z:
+                    z.extractall(os.path.join(BASE_DIR, "python"))
+        say("Tat IPv4...")
+        _set_ipv4(False)
+        time.sleep(2)
+        say("XONG. Mo lai GUI ban moi...")
+        open_gui()
+        time.sleep(2)
+    except Exception as e:
+        say("LOI cap nhat: " + repr(e)[:140])
+        try:
+            _set_ipv4(False)
+        except Exception:
+            pass
+        say("Mo lai GUI...")
+        open_gui()
+        time.sleep(6)   # giu console de doc loi
+
+
 BG = "#1e1e2e"
 PANEL = "#11111b"
 FG = "#cdd6f4"
@@ -504,82 +589,26 @@ class App:
         win.grab_set()
 
     def do_update(self):
-        # Cap nhat code moi tu GitHub -> tu khoi dong lai GUI voi code moi
+        # Dong GUI -> chay trinh cap nhat RIENG (console) -> xong updater tu mo lai GUI moi.
+        # GUI khong con song luc cap nhat nen KHONG bi 'not responding'.
         if self._updating:
             return
         self._updating = True
-        self._update_msg = "Chuan bi cap nhat..."
-        import threading
-        threading.Thread(target=self._run_update, daemon=True).start()
-
-    def _run_update(self):
-        import urllib.request, zipfile, tempfile, shutil
         try:
-            self._update_msg = "Dung dang/cmt..."
-            self.stop_all()
-            # Dam bao TAT HET browser chet han TRUOC khi bat IPv4 (tranh chrome dinh IPv4 -> lo anti-detect)
-            self._update_msg = "Tat het browser truoc khi bat IPv4..."
-            for _ in range(8):
-                kill_all_scripts()
-                force_kill_browsers()
-                if browsers_alive() == 0:
-                    break
-                time.sleep(1)
-            self._update_msg = "Bat IPv4 de tai..."
-            _set_ipv4(True)
-            time.sleep(7)
-            self._update_msg = "Tai code moi tu GitHub..."
-            tmp = tempfile.gettempdir()
-            zp = os.path.join(tmp, "tl_update.zip")
-            ex = os.path.join(tmp, "tl_update_ex")
-            urllib.request.urlretrieve(GITHUB_ZIP, zp)
-            if os.path.isdir(ex):
-                shutil.rmtree(ex, ignore_errors=True)
-            with zipfile.ZipFile(zp) as z:
-                z.extractall(ex)
-            subdirs = [os.path.join(ex, d) for d in os.listdir(ex) if os.path.isdir(os.path.join(ex, d))]
-            if not subdirs:
-                raise Exception("ZIP rong")
-            src = subdirs[0]
-            self._update_msg = "Copy file moi..."
-            for f in UPDATE_FILES:
-                sp = os.path.join(src, f)
-                if os.path.isfile(sp):
-                    shutil.copy2(sp, os.path.join(BASE_DIR, f))
-            si = os.path.join(src, "icon")
-            if os.path.isdir(si):
-                di = os.path.join(BASE_DIR, "icon")
-                if os.path.isdir(di):
-                    shutil.rmtree(di, ignore_errors=True)
-                shutil.copytree(si, di)
-            # Cay Tcl/Tk neu chua co
-            if not os.path.isfile(os.path.join(BASE_DIR, "python", "tkinter", "__init__.py")):
-                zt = os.path.join(BASE_DIR, "tkinter-embed-py311.zip")
-                if os.path.isfile(zt):
-                    with zipfile.ZipFile(zt) as z:
-                        z.extractall(os.path.join(BASE_DIR, "python"))
-            self._update_msg = "Tat IPv4..."
-            _set_ipv4(False)
-            time.sleep(2)
-            self._update_msg = "Khoi dong lai voi code moi..."
-            time.sleep(1)
-            # Nha khoa single-instance de GUI moi lay duoc
-            release_single_instance()
-            time.sleep(0.5)
-            # Mo GUI moi (doc tool_gui.py vua cap nhat) roi thoat tien trinh nay
-            subprocess.Popen([os.path.join(BASE_DIR, "python", "pythonw.exe"), "tool_gui.py"],
-                             cwd=BASE_DIR)
-            time.sleep(1.5)
-            os._exit(0)
-        except Exception as e:
-            self._update_msg = f"Update LOI: {repr(e)[:70]}"
-            try:
-                _set_ipv4(False)
-            except Exception:
-                pass
-            time.sleep(2)
-            self._updating = False
-            self.start_all()   # chay lai binh thuong
+            env = dict(os.environ)
+            env["PYTHONIOENCODING"] = "utf-8"
+            env["PYTHONUTF8"] = "1"
+            subprocess.Popen([PY, "-X", "utf8", "tool_gui.py", "__update__"],
+                             cwd=BASE_DIR, creationflags=CREATE_NEW_CONSOLE, env=env)
+        except Exception:
+            pass
+        time.sleep(0.8)
+        # Thoat GUI ngay (updater lo stop dang/cmt + update + mo lai GUI)
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+        os._exit(0)
 
     # ---- hien thi ----
     def _alive(self, p):
@@ -723,6 +752,9 @@ class App:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "__update__":
+        run_updater()           # che do cap nhat (console rieng) - khong mo GUI
+        os._exit(0)
     if not acquire_single_instance():
         try:
             import tkinter.messagebox as _mb
