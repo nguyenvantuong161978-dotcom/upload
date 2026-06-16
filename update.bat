@@ -39,7 +39,7 @@ set "ZIP_FILE=%TEMP%\upload_update.zip"
 set "EXTRACT_DIR=%TEMP%\upload_update"
 
 echo Dang tai ban cap nhat (timeout 90s, retry 4 lan)...
-powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $ok=$false; for($i=1; $i -le 4 -and -not $ok; $i++){ try { Invoke-WebRequest -Uri '%GITHUB_URL%' -OutFile '%ZIP_FILE%' -UseBasicParsing -TimeoutSec 90; $ok=$true; Write-Host 'Tai thanh cong!' } catch { Write-Host ('Lan '+$i+'/4 loi, thu lai sau 5s: '+$_.Exception.Message); Start-Sleep 5 } }; if(-not $ok){ exit 1 }"
+powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; $ok=$false; for($i=1; $i -le 4 -and -not $ok; $i++){ try { Invoke-WebRequest -Uri '%GITHUB_URL%' -OutFile '%ZIP_FILE%' -UseBasicParsing -TimeoutSec 90; $ok=$true; Write-Host 'Tai thanh cong!' } catch { Write-Host ('Lan '+$i+'/4 loi, thu lai sau 5s: '+$_.Exception.Message); Start-Sleep 5 } }; if(-not $ok){ exit 1 }"
 
 if %ERRORLEVEL% neq 0 (
     echo Khong the tai cap nhat sau 4 lan thu.
