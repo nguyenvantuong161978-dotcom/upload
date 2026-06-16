@@ -1342,25 +1342,32 @@ def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85):
     return False
 
 
-def wait_image(img_path, timeout_sec=30, confidence=0.85):
+def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55):
     """Chờ ảnh xuất hiện (KHÔNG click).
-    Trả về SimpleNamespace(x, y, w, h) hoặc None.
-    x, y = tâm ảnh. w, h = kích thước ảnh (để click_once biết phạm vi)."""
+    Confidence GIẢM DẦN sau mỗi vài lần thử (từ 'confidence' xuống 'min_confidence')
+    để dễ tìm hơn khi VM mờ/ảnh hơi lệch.
+    Trả về SimpleNamespace(x, y, w, h) hoặc None. x, y = tâm ảnh; w, h = kích thước."""
     logging.info("Cho anh (khong click): %s ...", os.path.basename(img_path))
     end = time.time() + timeout_sec
     last_err = None
+    conf = confidence
+    tries = 0
 
     while time.time() < end:
         try:
-            box = pyautogui.locateOnScreen(img_path, confidence=confidence)
+            box = pyautogui.locateOnScreen(img_path, confidence=conf)
             if box:
                 cx = box.left + box.width // 2
                 cy = box.top + box.height // 2
-                logging.info("Da thay: %s tai (%d,%d) size=%dx%d",
-                             os.path.basename(img_path), cx, cy, box.width, box.height)
+                logging.info("Da thay: %s tai (%d,%d) size=%dx%d conf=%.2f",
+                             os.path.basename(img_path), cx, cy, box.width, box.height, conf)
                 return SimpleNamespace(x=cx, y=cy, w=box.width, h=box.height)
         except Exception as e:
             last_err = e
+        tries += 1
+        # Cu 3 lan thu khong thay -> ha confidence 0.05 (toi thieu min_confidence)
+        if tries % 3 == 0 and conf > min_confidence:
+            conf = max(min_confidence, round(conf - 0.05, 2))
         time.sleep(r(*HUMAN.retry_interval))
 
     if last_err:
