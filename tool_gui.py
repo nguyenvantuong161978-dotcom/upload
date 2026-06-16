@@ -367,8 +367,10 @@ def run_updater():
         print("[UPDATE] " + m, flush=True)
 
     def open_gui():
+        # Detach bang 'start' -> GUI moi KHONG la con cua updater, tranh bi kill_all_scripts /T giet theo
         try:
-            subprocess.Popen([os.path.join(BASE_DIR, "python", "pythonw.exe"), "tool_gui.py"], cwd=BASE_DIR)
+            pyw = os.path.join(BASE_DIR, "python", "pythonw.exe")
+            subprocess.Popen(f'start "" "{pyw}" tool_gui.py', shell=True, cwd=BASE_DIR)
         except Exception as e:
             say("Mo lai GUI loi: " + repr(e)[:80])
 
