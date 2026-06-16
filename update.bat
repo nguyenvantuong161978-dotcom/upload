@@ -11,6 +11,18 @@ title Cap Nhat Tu GitHub [ADMIN]
 cd /d "%~dp0"
 
 echo ============================================
+echo   DONG TOOL + BROWSER...
+echo ============================================
+REM Dong GUI + dang/cmt + browser TRUOC khi bat IPv4 (tranh browser dinh IPv4)
+taskkill /F /IM pythonw.exe /T >nul 2>&1
+taskkill /F /IM python.exe /T >nul 2>&1
+taskkill /F /IM chrome.exe /T >nul 2>&1
+taskkill /F /IM msedge.exe /T >nul 2>&1
+taskkill /F /IM firefox.exe /T >nul 2>&1
+for /d %%C in ("%~dp0..\*") do taskkill /F /IM "%%~nxC.exe" /T >nul 2>&1
+timeout /t 3 /nobreak >nul
+
+echo ============================================
 echo   BAT IPv4 DE TAI CAP NHAT...
 echo ============================================
 
@@ -124,6 +136,7 @@ REM Tat IPv4
 echo Tat IPv4...
 powershell -Command "Get-NetAdapter | ForEach-Object { Disable-NetAdapterBinding -Name $_.Name -ComponentID ms_tcpip -ErrorAction SilentlyContinue }" >nul 2>&1
 
-echo.
-echo Ban co the chay run.bat de bat dau.
-timeout /t 5
+echo ============================================
+echo   MO LAI TOOL...
+echo ============================================
+start "" "%~dp0run.bat"

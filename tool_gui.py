@@ -591,21 +591,17 @@ class App:
         win.grab_set()
 
     def do_update(self):
-        # Dong GUI -> chay trinh cap nhat RIENG (console) -> xong updater tu mo lai GUI moi.
-        # GUI khong con song luc cap nhat nen KHONG bi 'not responding'.
+        # Dong GUI -> chay update.bat (cmd rieng). update.bat tu: kill tool + tai code
+        # moi + mo lai run.bat (GUI). cmd la tien trinh rieng nen GUI khong bi 'not responding'.
         if self._updating:
             return
         self._updating = True
         try:
-            env = dict(os.environ)
-            env["PYTHONIOENCODING"] = "utf-8"
-            env["PYTHONUTF8"] = "1"
-            subprocess.Popen([PY, "-X", "utf8", "tool_gui.py", "__update__"],
-                             cwd=BASE_DIR, creationflags=CREATE_NEW_CONSOLE, env=env)
+            subprocess.Popen(f'start "" "{os.path.join(BASE_DIR, "update.bat")}"',
+                             shell=True, cwd=BASE_DIR)
         except Exception:
             pass
-        time.sleep(0.8)
-        # Thoat GUI ngay (updater lo stop dang/cmt + update + mo lai GUI)
+        time.sleep(0.6)
         try:
             self.root.destroy()
         except Exception:
@@ -754,9 +750,6 @@ class App:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "__update__":
-        run_updater()           # che do cap nhat (console rieng) - khong mo GUI
-        os._exit(0)
     if not acquire_single_instance():
         try:
             import tkinter.messagebox as _mb
