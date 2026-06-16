@@ -148,6 +148,7 @@ def discover_channels():
 # │ S3 - CẤU HÌNH CỘT GOOGLE SHEETS (zero-based index)                 │
 # └──────────────────────────────────────────────────────────────────────┘
 
+IDX_TAG_AL     = 37   # AL - thẻ SEO (từ khóa), phân cách bằng dấu phẩy
 IDX_CHANNEL_AI = 34   # AI - mã kênh
 IDX_STATUS_AV  = 47   # AV - trạng thái (value = STATUS_OK)
 IDX_TITLE_BB   = 53   # BB - tiêu đề video
@@ -177,6 +178,7 @@ TEMPLATE_DANHSACHPHAT     = os.path.join(ICON_DIR, "danhsachphat.png")
 TEMPLATE_THU_NGHIEM       = os.path.join(ICON_DIR, "thunghiem.png")  # A/B test thumbnail
 TEMPLATE_HIEN_THEM        = os.path.join(ICON_DIR, "hienthem.png")   # nut "Hien them"
 TEMPLATE_CO               = os.path.join(ICON_DIR, "co.png")         # radio "Co" - co dung AI
+TEMPLATE_THEMTHE          = os.path.join(ICON_DIR, "themthe.png")     # o nhap "The (tu khoa)" SEO
 
 # Bước 2 - Phụ đề & End Screen
 TEMPLATE_DOI_TAI          = os.path.join(ICON_DIR, "doitai.png")   # đang tải video, chờ biến mất
@@ -1466,6 +1468,7 @@ def handle_metadata_flow(active_row):
     """
     title = norm(active_row[IDX_TITLE_BB]) if len(active_row) > IDX_TITLE_BB else ""
     desc  = norm(active_row[IDX_DESC_BC])  if len(active_row) > IDX_DESC_BC  else ""
+    tag   = norm(active_row[IDX_TAG_AL])   if len(active_row) > IDX_TAG_AL   else ""
 
     # === Dán TIÊU ĐỀ ===
     logging.info("Dan TIEU DE (BB): %s", (title or "(rong)"))
@@ -1550,6 +1553,25 @@ def handle_metadata_flow(active_row):
                                     confidence=r(*HUMAN.click_confidence)):
             logging.warning("Khong thay 'co.png' -> bo qua khai bao AI.")
         rsleep("medium")
+
+        # === Khai báo THẺ SEO (từ khóa) - cột AL sheet INPUT ===
+        # Ctrl+F tim phan "The (tu khoa)" roi cuon toi do (giong luong khai bao AI)
+        logging.info("Ctrl+F tim phan 'The (tu khoa)'...")
+        pyautogui.hotkey('ctrl', 'f'); rsleep("small")
+        pyautogui.hotkey('ctrl', 'a'); rsleep("tiny")   # xoa tu khoa tim cu
+        paste_text("Thẻ (từ khóa)")
+        rsleep("medium")
+        # Click o nhap the roi dan noi dung tag (click ngau nhien trong pham vi anh)
+        logging.info("Tim va click 'themthe.png' (o nhap the)...")
+        if wait_and_click_image(TEMPLATE_THEMTHE,
+                                timeout_sec=int(r(*HUMAN.click_timeout)),
+                                confidence=r(*HUMAN.click_confidence)):
+            rsleep("small")
+            logging.info("Dan THE SEO (AL): %s", (tag or "(rong)"))
+            paste_text(tag or "")
+            rsleep("medium")
+        else:
+            logging.warning("Khong thay 'themthe.png' -> bo qua nhap the SEO.")
     else:
         logging.warning("Khong thay 'hienthem.png' -> bo qua khai bao AI.")
 
