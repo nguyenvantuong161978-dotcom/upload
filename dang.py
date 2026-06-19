@@ -1681,32 +1681,39 @@ def handle_step2_flow(active_row, target_folder):
             logging.warning("Mat anchor buoc2/them (co the dang o panel SRT) -> thoat lap, sang du phong.")
             break
 
-    # ─── DỰ PHÒNG: dò lại taiteplen với confidence THẤP + grayscale ───
+    # ─── DỰ PHÒNG 1: dò lại taiteplen với confidence THẤP + grayscale ───
     # Chay cho MOI truong hop chua co taiteplen (het 5 lan / mat anchor giua chung).
     # Ha nguong 0.45 + grayscale vi anh van HIEN tren man nhung khop yeu (hover xanh / le mau).
     if not pos_tlp:
-        logging.warning("DU PHONG: do lai taiteplen (da template, confidence thap 0.45 + grayscale, 40s)...")
+        logging.warning("DU PHONG 1: do lai taiteplen (da template, confidence thap 0.45 + grayscale, 40s)...")
         pos_tlp = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=40,
                                    confidence=CLICK_CONFIDENCE, min_confidence=0.45, grayscale=True)
-        if not pos_tlp:
-            logging.error("Du phong van khong thay taiteplen/taiteplen2 -> dung Buoc 2.")
-            return
-        logging.info("Du phong DA thay taiteplen -> tiep tuc.")
 
-    # pos_tlp DA co tu vong lap/du phong o tren. Refresh toa do 1 lan o confidence CHUAN
-    # (tranh false-match lam hong toa do tot cua so dong). Neu refresh khong thay -> VAN dung
-    # pos_tlp cu (vd ma chi khop o buoc du phong 0.45), KHONG bo ma.
-    rsleep("long")
-    refreshed = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if refreshed:
-        pos_tlp = refreshed
+    # ─── DỰ PHÒNG 2 (ban phim): van khong thay anh -> Tab*3 + Enter de vao khu tai phu de ───
+    # Luc nay focus dang gan nut "Tai len"; Tab*3 + Enter kich hoat duoc -> sau do se hien tieptuc.png.
+    # KHONG bo ma o day: de buoc tim tieptuc.png / open.png ben duoi quyet dinh thanh/bai.
+    if not pos_tlp:
+        logging.warning("DU PHONG 2: khong thay taiteplen bang anh -> Tab*3 + Enter de vao upload (ky vong hien tieptuc.png)...")
+        press_key('tab', 3, "tiny")
+        pyautogui.press('enter'); rsleep("long")
+
+    # Click taiteplen NEU co toa do anh; neu khong (da dung du phong ban phim) -> bo qua click,
+    # sang thang tim tieptuc.png.
+    if pos_tlp:
+        # Refresh toa do 1 lan o confidence CHUAN (tranh false-match lam hong toa do tot cua so dong).
+        # Neu refresh khong thay -> VAN dung pos_tlp cu (vd ma chi khop o du phong 0.45), KHONG bo ma.
+        rsleep("long")
+        refreshed = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+        if refreshed:
+            pos_tlp = refreshed
+        else:
+            logging.warning("Refresh taiteplen (confidence chuan) khong thay -> dung lai toa do da tim truoc do.")
+        # Click taiteplen → tieptuc → mở hộp thoại Open SRT
+        time.sleep(rand(8, 12))   # thay taiteplen roi delay ~10s cho on dinh moi click (VM yeu)
+        move_click(pos_tlp.x, pos_tlp.y, img_size=_img_size(pos_tlp))
+        rsleep("long")
     else:
-        logging.warning("Refresh taiteplen (confidence chuan) khong thay -> dung lai toa do da tim truoc do.")
-
-    # Click taiteplen → tieptuc → mở hộp thoại Open SRT
-    time.sleep(rand(8, 12))   # thay taiteplen roi delay ~10s cho on dinh moi click (VM yeu)
-    move_click(pos_tlp.x, pos_tlp.y, img_size=_img_size(pos_tlp))
-    rsleep("long")
+        logging.info("Da dung du phong ban phim (Tab*3+Enter) -> bo qua click taiteplen, sang tim tieptuc.png.")
 
     logging.info("Tim 'tieptuc.png' (delay 1 chut truoc khi click cho on dinh)...")
     pos_tt = wait_image(TEMPLATE_TIEPTUC, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
