@@ -1388,12 +1388,21 @@ def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=
     if isinstance(img_paths, str):
         img_paths = [img_paths]
     names = ", ".join(os.path.basename(p) for p in img_paths)
-    logging.info("Cho anh (multi, khong click): %s ...", names)
-    end = time.time() + timeout_sec
-    conf = confidence
-    tries = 0
+    logging.info("Cho anh (multi, khong click): %s (conf %.2f -> %.2f) ...", names, confidence, min_confidence)
+    start = time.time()
+    end = start + timeout_sec
+    span = max(0.0, confidence - min_confidence)
+    last_conf = None
 
     while time.time() < end:
+        # Ha confidence theo THOI GIAN da troi (KHONG theo so lan thu). Du moi vong scan cham
+        # (nhieu anh) hay nhanh, confidence van trai deu tu 'confidence' -> 'min_confidence'
+        # qua suot cua so -> cuoi cua so chac chan dò o muc thap nhat (bat duoc anh khop yeu).
+        frac = (time.time() - start) / timeout_sec
+        conf = round(max(min_confidence, confidence - span * frac), 2)
+        if conf != last_conf:
+            logging.debug("multi conf -> %.2f (frac %.2f)", conf, frac)
+            last_conf = conf
         for p in img_paths:
             try:
                 box = pyautogui.locateOnScreen(p, confidence=conf, grayscale=grayscale)
@@ -1405,10 +1414,6 @@ def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=
                     return SimpleNamespace(x=cx, y=cy, w=box.width, h=box.height)
             except Exception:
                 pass
-        tries += 1
-        # Cu 3 lan thu khong thay -> ha confidence 0.05 (toi thieu min_confidence)
-        if tries % 3 == 0 and conf > min_confidence:
-            conf = max(min_confidence, round(conf - 0.05, 2))
         time.sleep(r(*HUMAN.retry_interval))
 
     logging.error("Het thoi gian cho (multi): %s", names)
