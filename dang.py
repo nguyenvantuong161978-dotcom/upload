@@ -1380,7 +1380,7 @@ def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55):
     return None
 
 
-def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=0.55):
+def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=0.55, grayscale=False):
     """Chờ BẤT KỲ ảnh nào trong danh sách xuất hiện (KHÔNG click).
     Dò luân phiên từng template mỗi vòng; confidence giảm dần như wait_image.
     Dùng cho anchor có nhiều biến thể (vd taiteplen.png thường + taiteplen2.png lúc hover bị xanh).
@@ -1396,7 +1396,7 @@ def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=
     while time.time() < end:
         for p in img_paths:
             try:
-                box = pyautogui.locateOnScreen(p, confidence=conf)
+                box = pyautogui.locateOnScreen(p, confidence=conf, grayscale=grayscale)
                 if box:
                     cx = box.left + box.width // 2
                     cy = box.top + box.height // 2
@@ -1652,6 +1652,7 @@ def handle_step2_flow(active_row, target_folder):
 
     # Lặp click để focus đúng vùng SRT
     MAX_TRIES = 5
+    pos_tlp = None
     for attempt in range(1, MAX_TRIES + 1):
         logging.info(f"[B2 focus try {attempt}/{MAX_TRIES}] click buoc2 -> cho on dinh 5-10s -> Tab*4 -> Enter")
         move_click(pos_buoc2.x, pos_buoc2.y, img_size=_img_size(pos_buoc2))
@@ -1665,35 +1666,39 @@ def handle_step2_flow(active_row, target_folder):
         if pos_tlp:
             logging.info("DA thay taiteplen -> tiep tuc.")
             break
-        else:
-            logging.warning("Chua thay taiteplen -> lap lai.")
-            pos_buoc2 = wait_image(TEMPLATE_BUOC2, timeout_sec=15, confidence=CLICK_CONFIDENCE) or \
-                        wait_image(TEMPLATE_STEP2_THEM, timeout_sec=5, confidence=CLICK_CONFIDENCE)
-            if not pos_buoc2:
-                logging.error("Mat anchor buoc2/them -> dung Buoc 2.")
-                return
-    else:
-        # Du phong: truoc khi bo ma, quay lai do 1 lan nua ca taiteplen.png va taiteplen2.png
-        # (truong hop vung dang bi hover xanh nen ban thuong khong khop)
-        logging.warning(f"Sau {MAX_TRIES} lan khong thay taiteplen -> THU DU PHONG 1 lan (da template, 30s)...")
-        pos_tlp = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=30, confidence=CLICK_CONFIDENCE)
+
+        logging.warning("Chua thay taiteplen -> thu tim lai anchor buoc2/them de lap.")
+        # Sau Tab*4+Enter trang thuong cuon xuong panel SRT -> buoc2/them co the da khuat.
+        # Neu mat anchor: KHONG bo ma ngay, ma THOAT LAP de chay BUOC DU PHONG ben duoi.
+        pos_buoc2 = wait_image(TEMPLATE_BUOC2, timeout_sec=15, confidence=CLICK_CONFIDENCE) or \
+                    wait_image(TEMPLATE_STEP2_THEM, timeout_sec=5, confidence=CLICK_CONFIDENCE)
+        if not pos_buoc2:
+            logging.warning("Mat anchor buoc2/them (co the dang o panel SRT) -> thoat lap, sang du phong.")
+            break
+
+    # ─── DỰ PHÒNG: dò lại taiteplen với confidence THẤP + grayscale ───
+    # Chay cho MOI truong hop chua co taiteplen (het 5 lan / mat anchor giua chung).
+    # Ha nguong 0.45 + grayscale vi anh van HIEN tren man nhung khop yeu (hover xanh / le mau).
+    if not pos_tlp:
+        logging.warning("DU PHONG: do lai taiteplen (da template, confidence thap 0.45 + grayscale, 40s)...")
+        pos_tlp = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=40,
+                                   confidence=CLICK_CONFIDENCE, min_confidence=0.45, grayscale=True)
         if not pos_tlp:
             logging.error("Du phong van khong thay taiteplen/taiteplen2 -> dung Buoc 2.")
             return
         logging.info("Du phong DA thay taiteplen -> tiep tuc.")
 
-    # Chờ vùng tải phụ đề (đa template)
-    logging.info("Cho taiteplen (taiteplen.png/taiteplen2.png) - vung Tai tep len phu de...")
-    if not wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
-        logging.error("Khong thay taiteplen => khong the mo khu tai phu de.")
-        return
+    # pos_tlp DA co tu vong lap/du phong o tren. Refresh toa do 1 lan o confidence CHUAN
+    # (tranh false-match lam hong toa do tot cua so dong). Neu refresh khong thay -> VAN dung
+    # pos_tlp cu (vd ma chi khop o buoc du phong 0.45), KHONG bo ma.
     rsleep("long")
+    refreshed = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    if refreshed:
+        pos_tlp = refreshed
+    else:
+        logging.warning("Refresh taiteplen (confidence chuan) khong thay -> dung lai toa do da tim truoc do.")
 
     # Click taiteplen → tieptuc → mở hộp thoại Open SRT
-    pos_tlp = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-    if not pos_tlp:
-        logging.error("Khong thay taiteplen.")
-        return
     time.sleep(rand(8, 12))   # thay taiteplen roi delay ~10s cho on dinh moi click (VM yeu)
     move_click(pos_tlp.x, pos_tlp.y, img_size=_img_size(pos_tlp))
     rsleep("long")
