@@ -186,6 +186,8 @@ TEMPLATE_LOI              = os.path.join(ICON_DIR, "loi.png")     # video bị l
 TEMPLATE_BUOC2            = os.path.join(ICON_DIR, "buoc2.png")
 TEMPLATE_STEP2_THEM       = os.path.join(ICON_DIR, "them.png")
 TEMPLATE_TAITEPLEN        = os.path.join(ICON_DIR, "taiteplen.png")
+TEMPLATE_TAITEPLEN2       = os.path.join(ICON_DIR, "taiteplen2.png")  # bien the khi hover (vung bi xanh)
+TAITEPLEN_TEMPLATES       = [TEMPLATE_TAITEPLEN, TEMPLATE_TAITEPLEN2]
 TEMPLATE_TIEPTUC          = os.path.join(ICON_DIR, "tieptuc.png")
 TEMPLATE_DONE             = os.path.join(ICON_DIR, "xong.png")
 TEMPLATE_ENDSCREEN        = os.path.join(ICON_DIR, "manhinhketthuc.png")
@@ -1378,6 +1380,41 @@ def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55):
     return None
 
 
+def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=0.55):
+    """Chờ BẤT KỲ ảnh nào trong danh sách xuất hiện (KHÔNG click).
+    Dò luân phiên từng template mỗi vòng; confidence giảm dần như wait_image.
+    Dùng cho anchor có nhiều biến thể (vd taiteplen.png thường + taiteplen2.png lúc hover bị xanh).
+    Trả về SimpleNamespace(x, y, w, h) cho template ĐẦU TIÊN khớp, hoặc None."""
+    if isinstance(img_paths, str):
+        img_paths = [img_paths]
+    names = ", ".join(os.path.basename(p) for p in img_paths)
+    logging.info("Cho anh (multi, khong click): %s ...", names)
+    end = time.time() + timeout_sec
+    conf = confidence
+    tries = 0
+
+    while time.time() < end:
+        for p in img_paths:
+            try:
+                box = pyautogui.locateOnScreen(p, confidence=conf)
+                if box:
+                    cx = box.left + box.width // 2
+                    cy = box.top + box.height // 2
+                    logging.info("Da thay (multi): %s tai (%d,%d) size=%dx%d conf=%.2f",
+                                 os.path.basename(p), cx, cy, box.width, box.height, conf)
+                    return SimpleNamespace(x=cx, y=cy, w=box.width, h=box.height)
+            except Exception:
+                pass
+        tries += 1
+        # Cu 3 lan thu khong thay -> ha confidence 0.05 (toi thieu min_confidence)
+        if tries % 3 == 0 and conf > min_confidence:
+            conf = max(min_confidence, round(conf - 0.05, 2))
+        time.sleep(r(*HUMAN.retry_interval))
+
+    logging.error("Het thoi gian cho (multi): %s", names)
+    return None
+
+
 # ┌──────────────────────────────────────────────────────────────────────┐
 # │ S10 - BƯỚC 1: UPLOAD FILE & NHẬP METADATA                           │
 # └──────────────────────────────────────────────────────────────────────┘
@@ -1622,34 +1659,40 @@ def handle_step2_flow(active_row, target_folder):
         press_key('tab', 4, "tiny")
         pyautogui.press('enter'); rsleep("small")
 
-        logging.info("Kiem tra 'taiteplen.png' sau Enter...")
+        logging.info("Kiem tra taiteplen (da template: taiteplen.png/taiteplen2.png) sau Enter...")
         # Cho it nhat 30s (cu 10s) - VM yeu/mang cham panel phu de load lau hon sau Enter
-        pos_tlp = wait_image(TEMPLATE_TAITEPLEN, timeout_sec=30, confidence=CLICK_CONFIDENCE)
+        pos_tlp = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=30, confidence=CLICK_CONFIDENCE)
         if pos_tlp:
-            logging.info("DA thay 'taiteplen.png' -> tiep tuc.")
+            logging.info("DA thay taiteplen -> tiep tuc.")
             break
         else:
-            logging.warning("Chua thay 'taiteplen.png' -> lap lai.")
+            logging.warning("Chua thay taiteplen -> lap lai.")
             pos_buoc2 = wait_image(TEMPLATE_BUOC2, timeout_sec=15, confidence=CLICK_CONFIDENCE) or \
                         wait_image(TEMPLATE_STEP2_THEM, timeout_sec=5, confidence=CLICK_CONFIDENCE)
             if not pos_buoc2:
                 logging.error("Mat anchor buoc2/them -> dung Buoc 2.")
                 return
     else:
-        logging.error(f"Sau {MAX_TRIES} lan van khong thay 'taiteplen.png' -> dung Buoc 2.")
-        return
+        # Du phong: truoc khi bo ma, quay lai do 1 lan nua ca taiteplen.png va taiteplen2.png
+        # (truong hop vung dang bi hover xanh nen ban thuong khong khop)
+        logging.warning(f"Sau {MAX_TRIES} lan khong thay taiteplen -> THU DU PHONG 1 lan (da template, 30s)...")
+        pos_tlp = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=30, confidence=CLICK_CONFIDENCE)
+        if not pos_tlp:
+            logging.error("Du phong van khong thay taiteplen/taiteplen2 -> dung Buoc 2.")
+            return
+        logging.info("Du phong DA thay taiteplen -> tiep tuc.")
 
-    # Chờ vùng tải phụ đề
-    logging.info("Cho 'taiteplen.png' (vung Tai tep len phu de)...")
-    if not wait_image(TEMPLATE_TAITEPLEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
-        logging.error("Khong thay 'taiteplen.png' => khong the mo khu tai phu de.")
+    # Chờ vùng tải phụ đề (đa template)
+    logging.info("Cho taiteplen (taiteplen.png/taiteplen2.png) - vung Tai tep len phu de...")
+    if not wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE):
+        logging.error("Khong thay taiteplen => khong the mo khu tai phu de.")
         return
     rsleep("long")
 
     # Click taiteplen → tieptuc → mở hộp thoại Open SRT
-    pos_tlp = wait_image(TEMPLATE_TAITEPLEN, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    pos_tlp = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
     if not pos_tlp:
-        logging.error("Khong thay 'taiteplen.png'.")
+        logging.error("Khong thay taiteplen.")
         return
     time.sleep(rand(8, 12))   # thay taiteplen roi delay ~10s cho on dinh moi click (VM yeu)
     move_click(pos_tlp.x, pos_tlp.y, img_size=_img_size(pos_tlp))
