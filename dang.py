@@ -1700,16 +1700,11 @@ def handle_step2_flow(active_row, target_folder):
     # Click taiteplen NEU co toa do anh; neu khong (da dung du phong ban phim) -> bo qua click,
     # sang thang tim tieptuc.png.
     if pos_tlp:
-        # Refresh toa do 1 lan o confidence CHUAN (tranh false-match lam hong toa do tot cua so dong).
-        # Neu refresh khong thay -> VAN dung pos_tlp cu (vd ma chi khop o du phong 0.45), KHONG bo ma.
-        rsleep("long")
-        refreshed = wait_image_multi(TAITEPLEN_TEMPLATES, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
-        if refreshed:
-            pos_tlp = refreshed
-        else:
-            logging.warning("Refresh taiteplen (confidence chuan) khong thay -> dung lai toa do da tim truoc do.")
+        # DA co toa do taiteplen (vua tim thay o vong lap/du phong, trang khong tu cuon)
+        # -> CLICK LUON, KHONG do lai. (Do lai voi STEP2_TIMEOUT 200-300s se treo 3-5 phut khi
+        # anh khop yeu -> tuong "thay toa do roi ma khong click".)
         # Click taiteplen → tieptuc → mở hộp thoại Open SRT
-        time.sleep(rand(8, 12))   # thay taiteplen roi delay ~10s cho on dinh moi click (VM yeu)
+        time.sleep(rand(8, 12))   # delay ~10s cho on dinh moi click (VM yeu)
         move_click(pos_tlp.x, pos_tlp.y, img_size=_img_size(pos_tlp))
         rsleep("long")
     else:
