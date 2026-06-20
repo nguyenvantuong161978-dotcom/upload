@@ -1765,12 +1765,10 @@ def handle_step2_flow(active_row, target_folder):
     # Chọn Video 2 (Enter×2)
     press_key('enter', 2, "small")
 
-    # Chọn Danh sách phát: Enter → mũi tên Xuống → Enter → Tab×3 → Enter
-    # (thay 'd' bang phim Xuong: phim dieu huong, khong bi Chrome/YouTube nuot thanh phim tat
-    #  "ask Google" khi focus lo roi ra trang)
+    # Chọn Danh sách phát: Enter → 'd' → Enter → Tab×3 → Enter
     press_key('enter', 1, "small")
     rsleep("tiny")
-    pyautogui.press('down'); rsleep("tiny")
+    pyautogui.press('d'); rsleep("tiny")
     press_key('enter', 1, "small")
     press_key('tab', 3, "tiny")
     press_key('enter', 1, "small")
