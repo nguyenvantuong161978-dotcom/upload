@@ -1317,16 +1317,24 @@ def close_browsers_gently_in_rdp(browser_exe=None):
     rsleep("small")
 
 
-def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85, grayscale=True):
-    """Chờ ảnh xuất hiện rồi click. Tự giảm dần confidence.
-    grayscale=True: dò theo thang xám (dễ khớp hơn khi VM mờ/lệch màu) + hạ ngưỡng tới 0.5.
+def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85, grayscale=True, min_floor=None):
+    """Chờ ảnh xuất hiện rồi click. Tự giảm dần confidence tới 'min_floor'.
+    grayscale=True: dò theo thang xám (dễ khớp hơn khi VM mờ/lệch màu).
+    min_floor: ngưỡng thấp nhất sẽ thử (mặc định 0.45 khi grayscale, 0.6 khi không).
+               Ảnh to/khó (vd henlich 534px) có thể truyền thấp hơn: min_floor=0.40.
     Click ngẫu nhiên TRONG PHẠM VI ẢNH (không ra ngoài)."""
-    logging.info("Cho anh (click): %s%s ...", os.path.basename(img_path),
-                 (" [gray]" if grayscale else ""))
+    if min_floor is None:
+        min_floor = 0.45 if grayscale else 0.6
+    logging.info("Cho anh (click): %s [gray=%s floor=%.2f] ...",
+                 os.path.basename(img_path), grayscale, min_floor)
     end = time.time() + timeout_sec
-    confidence_levels = [confidence, 0.8, 0.75, 0.7, 0.65, 0.6]
-    if grayscale:
-        confidence_levels = confidence_levels + [0.55, 0.5]
+    # confidence giảm dần từ 'confidence' xuống 'min_floor' (bước 0.05)
+    confidence_levels = [confidence]
+    _c = 0.80
+    while _c >= min_floor - 1e-9:
+        if _c < confidence - 1e-9:
+            confidence_levels.append(round(_c, 2))
+        _c -= 0.05
 
     while time.time() < end:
         for conf in confidence_levels:
@@ -1350,7 +1358,7 @@ def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85, grayscale=Tr
     return False
 
 
-def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55, region=None, grayscale=True):
+def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.45, region=None, grayscale=True):
     """Chờ ảnh xuất hiện (KHÔNG click).
     region=(left, top, width, height): chỉ dò trong vùng này (toạ độ tuyệt đối, pixel ảnh chụp);
     None = dò toàn màn hình. Toạ độ trả về luôn tuyệt đối.
@@ -1386,7 +1394,7 @@ def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55, r
     return None
 
 
-def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=0.55, grayscale=True):
+def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=0.45, grayscale=True):
     """Chờ BẤT KỲ ảnh nào trong danh sách xuất hiện (KHÔNG click).
     Dò luân phiên từng template mỗi vòng; confidence giảm dần như wait_image.
     Dùng cho anchor có nhiều biến thể (vd taiteplen.png thường + taiteplen2.png lúc hover bị xanh).
@@ -1975,9 +1983,11 @@ def handle_step3_4_flow(active_row, client, code):
     """
     CLICK_TIMEOUT_SEC = int(r(*HUMAN.click_timeout))
 
-    # Click henlich.png để vào màn hẹn lịch (grayscale: anh hay hien nhung khop yeu tren VM mo)
+    # Click henlich.png để vào màn hẹn lịch.
+    # henlich.png to (534x86) -> ha nguong sau (min_floor=0.40) vi anh to rat de tut diem khop.
     logging.info("Tim va click 'henlich.png' de vao man hen lich...")
-    if not wait_and_click_image(TEMPLATE_HENLICH, timeout_sec=CLICK_TIMEOUT_SEC, grayscale=True):
+    if not wait_and_click_image(TEMPLATE_HENLICH, timeout_sec=CLICK_TIMEOUT_SEC,
+                                grayscale=True, min_floor=0.40):
         logging.error("Khong tim thay 'henlich.png' => khong the vao man hen lich.")
         return False
 
