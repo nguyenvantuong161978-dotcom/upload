@@ -478,7 +478,6 @@ class App:
             ("🔑 Lay Token/Key", self.do_setup, YELLOW),
             ("✎ Key Gemini", self.do_keys, GREEN),
             ("⬇ Update", self.do_update, "#fab387"),
-            ("🗕 Thu nho", self.root.iconify, "#9399b2"),
         ]:
             tk.Button(btns, text=txt, command=cmd, bg=clr, fg=BG,
                       font=("Segoe UI", 9, "bold"), relief="flat", padx=8).pack(side="left", padx=3)
@@ -509,7 +508,16 @@ class App:
 
         self.start_all()
         self.refresh()
+        # Tu dong thu nho ve thanh tac vu sau 30s ke tu khi bat tool (tool van chay nen)
+        self.root.after(30000, self._auto_minimize)
         self.root.mainloop()
+
+    def _auto_minimize(self):
+        """Thu nho cua so ve thanh tac vu (iconify). Goi tu dong sau 30s."""
+        try:
+            self.root.iconify()
+        except Exception:
+            pass
 
     # ---- dieu khien ----
     def start_all(self):
