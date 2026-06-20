@@ -1317,18 +1317,22 @@ def close_browsers_gently_in_rdp(browser_exe=None):
     rsleep("small")
 
 
-def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85):
+def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85, grayscale=False):
     """Chờ ảnh xuất hiện rồi click. Tự giảm dần confidence.
+    grayscale=True: dò theo thang xám (dễ khớp hơn khi VM mờ/lệch màu) + hạ ngưỡng tới 0.5.
     Click ngẫu nhiên TRONG PHẠM VI ẢNH (không ra ngoài)."""
-    logging.info("Cho anh (click): %s ...", os.path.basename(img_path))
+    logging.info("Cho anh (click): %s%s ...", os.path.basename(img_path),
+                 (" [gray]" if grayscale else ""))
     end = time.time() + timeout_sec
     confidence_levels = [confidence, 0.8, 0.75, 0.7, 0.65, 0.6]
+    if grayscale:
+        confidence_levels = confidence_levels + [0.55, 0.5]
 
     while time.time() < end:
         for conf in confidence_levels:
             try:
                 # Dùng locateOnScreen để lấy box (left, top, width, height)
-                box = pyautogui.locateOnScreen(img_path, confidence=conf)
+                box = pyautogui.locateOnScreen(img_path, confidence=conf, grayscale=grayscale)
                 if box:
                     # Tâm ảnh
                     cx = box.left + box.width // 2
@@ -1346,7 +1350,7 @@ def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85):
     return False
 
 
-def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55, region=None):
+def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55, region=None, grayscale=False):
     """Chờ ảnh xuất hiện (KHÔNG click).
     region=(left, top, width, height): chỉ dò trong vùng này (toạ độ tuyệt đối, pixel ảnh chụp);
     None = dò toàn màn hình. Toạ độ trả về luôn tuyệt đối.
@@ -1361,7 +1365,7 @@ def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55, r
 
     while time.time() < end:
         try:
-            box = pyautogui.locateOnScreen(img_path, confidence=conf, region=region)
+            box = pyautogui.locateOnScreen(img_path, confidence=conf, region=region, grayscale=grayscale)
             if box:
                 cx = box.left + box.width // 2
                 cy = box.top + box.height // 2
@@ -1937,7 +1941,8 @@ def handle_step2_flow(active_row, target_folder):
     # ─── D) CHUYỂN SANG BƯỚC HẸN LỊCH ───
 
     logging.info("Click 'Che do hien thi' de sang buoc hen lich...")
-    pos_cdhien = wait_image(TEMPLATE_CHEDO_HIEN_THI, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    pos_cdhien = wait_image(TEMPLATE_CHEDO_HIEN_THI, timeout_sec=STEP2_TIMEOUT_SEC,
+                            confidence=CLICK_CONFIDENCE, min_confidence=0.45, grayscale=True)
     if not pos_cdhien:
         logging.error("Khong thay 'chedohienthi.png' => khong the sang man hen lich.")
         return False
@@ -2300,7 +2305,7 @@ def post_channel(ch, ready_codes, input_rows, client):
             logging.info("Bo qua Buoc 2 -> click 'Che do hien thi' de sang hen lich...")
             wait_and_click_image(TEMPLATE_CHEDO_HIEN_THI,
                                  timeout_sec=int(r(*HUMAN.click_timeout)),
-                                 confidence=r(*HUMAN.click_confidence))
+                                 confidence=r(*HUMAN.click_confidence), grayscale=True)
             rsleep("long")
 
         ok = handle_step3_4_flow(active_row, client, code)
