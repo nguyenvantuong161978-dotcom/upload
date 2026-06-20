@@ -478,6 +478,7 @@ class App:
             ("🔑 Lay Token/Key", self.do_setup, YELLOW),
             ("✎ Key Gemini", self.do_keys, GREEN),
             ("⬇ Update", self.do_update, "#fab387"),
+            ("🗕 Thu nho", self.root.iconify, "#9399b2"),
         ]:
             tk.Button(btns, text=txt, command=cmd, bg=clr, fg=BG,
                       font=("Segoe UI", 9, "bold"), relief="flat", padx=8).pack(side="left", padx=3)
