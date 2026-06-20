@@ -1346,8 +1346,10 @@ def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85):
     return False
 
 
-def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55):
+def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55, region=None):
     """Chờ ảnh xuất hiện (KHÔNG click).
+    region=(left, top, width, height): chỉ dò trong vùng này (toạ độ tuyệt đối, pixel ảnh chụp);
+    None = dò toàn màn hình. Toạ độ trả về luôn tuyệt đối.
     Confidence GIẢM DẦN sau mỗi vài lần thử (từ 'confidence' xuống 'min_confidence')
     để dễ tìm hơn khi VM mờ/ảnh hơi lệch.
     Trả về SimpleNamespace(x, y, w, h) hoặc None. x, y = tâm ảnh; w, h = kích thước."""
@@ -1359,7 +1361,7 @@ def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55):
 
     while time.time() < end:
         try:
-            box = pyautogui.locateOnScreen(img_path, confidence=conf)
+            box = pyautogui.locateOnScreen(img_path, confidence=conf, region=region)
             if box:
                 cx = box.left + box.width // 2
                 cy = box.top + box.height // 2
@@ -1763,21 +1765,28 @@ def handle_step2_flow(active_row, target_folder):
     # Chọn Video 2 (Enter×2)
     press_key('enter', 2, "small")
 
-    # Chọn Danh sách phát: Enter → 'd' → Enter → Tab×3 → Enter
+    # Chọn Danh sách phát: Enter → mũi tên Xuống → Enter → Tab×3 → Enter
+    # (thay 'd' bang phim Xuong: phim dieu huong, khong bi Chrome/YouTube nuot thanh phim tat
+    #  "ask Google" khi focus lo roi ra trang)
     press_key('enter', 1, "small")
     rsleep("tiny")
-    pyautogui.press('d'); rsleep("tiny")
+    pyautogui.press('down'); rsleep("tiny")
     press_key('enter', 1, "small")
     press_key('tab', 3, "tiny")
     press_key('enter', 1, "small")
 
     # Chọn Đăng ký: Enter → click dangky.png
+    # CHI dò trong vung hop thoai End Screen (nua trai, duoi thanh chrome) de TRANH khop nham
+    # nut "Ask Google"/"Ask Gemini" o goc phai tren (da tung click nham 1768,64 -> bat Ask Google).
     press_key('enter', 1, "small")
-    pos_dangky = wait_image(TEMPLATE_DANGKY, timeout_sec=STEP2_TIMEOUT_SEC, confidence=CLICK_CONFIDENCE)
+    _sw, _sh = pyautogui.screenshot().size           # kich thuoc pixel that cua anh chup
+    dangky_region = (0, int(_sh * 0.12), int(_sw * 0.78), _sh - int(_sh * 0.12))
+    pos_dangky = wait_image(TEMPLATE_DANGKY, timeout_sec=STEP2_TIMEOUT_SEC,
+                            confidence=CLICK_CONFIDENCE, region=dangky_region)
     if pos_dangky:
         move_click(pos_dangky.x, pos_dangky.y, img_size=_img_size(pos_dangky)); rsleep("small")
     else:
-        logging.error("Khong thay 'dangky.png' => bo qua buoc chon Dang ky.")
+        logging.error("Khong thay 'dangky.png' trong vung hop thoai => bo qua buoc chon Dang ky.")
 
     # Lưu End Screen
     logging.info("Cho 'luu.png' de luu man hinh ket thuc...")
