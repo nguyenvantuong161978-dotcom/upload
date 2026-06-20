@@ -1975,9 +1975,9 @@ def handle_step3_4_flow(active_row, client, code):
     """
     CLICK_TIMEOUT_SEC = int(r(*HUMAN.click_timeout))
 
-    # Click henlich.png để vào màn hẹn lịch
+    # Click henlich.png để vào màn hẹn lịch (grayscale: anh hay hien nhung khop yeu tren VM mo)
     logging.info("Tim va click 'henlich.png' de vao man hen lich...")
-    if not wait_and_click_image(TEMPLATE_HENLICH, timeout_sec=CLICK_TIMEOUT_SEC):
+    if not wait_and_click_image(TEMPLATE_HENLICH, timeout_sec=CLICK_TIMEOUT_SEC, grayscale=True):
         logging.error("Khong tim thay 'henlich.png' => khong the vao man hen lich.")
         return False
 
