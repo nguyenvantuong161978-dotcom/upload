@@ -1943,10 +1943,24 @@ def handle_step2_flow(active_row, target_folder):
     logging.info("Click 'Che do hien thi' de sang buoc hen lich...")
     pos_cdhien = wait_image(TEMPLATE_CHEDO_HIEN_THI, timeout_sec=STEP2_TIMEOUT_SEC,
                             confidence=CLICK_CONFIDENCE, min_confidence=0.45, grayscale=True)
-    if not pos_cdhien:
-        logging.error("Khong thay 'chedohienthi.png' => khong the sang man hen lich.")
+    if pos_cdhien:
+        move_click(pos_cdhien.x, pos_cdhien.y, img_size=_img_size(pos_cdhien))
+        rsleep("long")
+        return True
+
+    # ─── DỰ PHÒNG: không thấy chedohienthi -> dùng nút "Tiep" để sang trang (khong gay) ───
+    # Click tiep.png -> sang bang kiem tra -> click tiep.png lan 2 -> roi henlich.png nhu cu.
+    logging.warning("Khong thay 'chedohienthi.png' -> DU PHONG: tim & click 'tiep.png' lan 1...")
+    if not wait_and_click_image(TEMPLATE_NEXT_BTN, timeout_sec=STEP2_TIMEOUT_SEC,
+                                confidence=CLICK_CONFIDENCE, grayscale=True):
+        logging.error("Du phong: khong thay 'tiep.png' lan 1 => khong the sang man hen lich.")
         return False
-    move_click(pos_cdhien.x, pos_cdhien.y, img_size=_img_size(pos_cdhien))
+    rsleep("long")
+    # Sang bang kiem tra -> click "Tiep" lan 2
+    logging.info("Du phong: sang bang kiem tra -> tim & click 'tiep.png' lan 2...")
+    if not wait_and_click_image(TEMPLATE_NEXT_BTN, timeout_sec=STEP2_TIMEOUT_SEC,
+                                confidence=CLICK_CONFIDENCE, grayscale=True):
+        logging.warning("Du phong: khong thay 'tiep.png' lan 2 -> van tiep tuc (henlich.png o buoc sau).")
     rsleep("long")
     return True
 
