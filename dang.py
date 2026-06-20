@@ -1773,18 +1773,14 @@ def handle_step2_flow(active_row, target_folder):
     press_key('tab', 3, "tiny")
     press_key('enter', 1, "small")
 
-    # Chọn Đăng ký: Enter → click dangky.png
-    # CHI dò trong vung hop thoai End Screen (nua trai, duoi thanh chrome) de TRANH khop nham
-    # nut "Ask Google"/"Ask Gemini" o goc phai tren (da tung click nham 1768,64 -> bat Ask Google).
-    press_key('enter', 1, "small")
-    _sw, _sh = pyautogui.screenshot().size           # kich thuoc pixel that cua anh chup
-    dangky_region = (0, int(_sh * 0.12), int(_sw * 0.78), _sh - int(_sh * 0.12))
-    pos_dangky = wait_image(TEMPLATE_DANGKY, timeout_sec=STEP2_TIMEOUT_SEC,
-                            confidence=CLICK_CONFIDENCE, region=dangky_region)
-    if pos_dangky:
-        move_click(pos_dangky.x, pos_dangky.y, img_size=_img_size(pos_dangky)); rsleep("small")
-    else:
-        logging.error("Khong thay 'dangky.png' trong vung hop thoai => bo qua buoc chon Dang ky.")
+    # Chọn Đăng ký: Enter (mở menu) → mũi tên Xuống ×2 → Enter
+    # Chon bang BAN PHIM giong Video/Danh sach phat (menu tha xuong: Video -> Danh sach phat
+    # -> Dang ky). Bo click chuot vi menu khong chon duoc bang click va hay khop nham "Ask Google".
+    press_key('enter', 1, "small")     # mở menu thành phần
+    rsleep("tiny")
+    press_key('down', 2, "tiny")       # Xuống tới "Đăng ký" (Video -> Danh sach phat -> Dang ky)
+    press_key('enter', 1, "small")     # chọn "Đăng ký"
+    rsleep("small")
 
     # Lưu End Screen
     logging.info("Cho 'luu.png' de luu man hinh ket thuc...")
