@@ -1317,7 +1317,7 @@ def close_browsers_gently_in_rdp(browser_exe=None):
     rsleep("small")
 
 
-def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85, grayscale=False):
+def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85, grayscale=True):
     """Chờ ảnh xuất hiện rồi click. Tự giảm dần confidence.
     grayscale=True: dò theo thang xám (dễ khớp hơn khi VM mờ/lệch màu) + hạ ngưỡng tới 0.5.
     Click ngẫu nhiên TRONG PHẠM VI ẢNH (không ra ngoài)."""
@@ -1350,7 +1350,7 @@ def wait_and_click_image(img_path, timeout_sec=30, confidence=0.85, grayscale=Fa
     return False
 
 
-def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55, region=None, grayscale=False):
+def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55, region=None, grayscale=True):
     """Chờ ảnh xuất hiện (KHÔNG click).
     region=(left, top, width, height): chỉ dò trong vùng này (toạ độ tuyệt đối, pixel ảnh chụp);
     None = dò toàn màn hình. Toạ độ trả về luôn tuyệt đối.
@@ -1386,7 +1386,7 @@ def wait_image(img_path, timeout_sec=30, confidence=0.85, min_confidence=0.55, r
     return None
 
 
-def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=0.55, grayscale=False):
+def wait_image_multi(img_paths, timeout_sec=30, confidence=0.85, min_confidence=0.55, grayscale=True):
     """Chờ BẤT KỲ ảnh nào trong danh sách xuất hiện (KHÔNG click).
     Dò luân phiên từng template mỗi vòng; confidence giảm dần như wait_image.
     Dùng cho anchor có nhiều biến thể (vd taiteplen.png thường + taiteplen2.png lúc hover bị xanh).
