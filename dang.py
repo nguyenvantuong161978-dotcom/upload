@@ -2214,7 +2214,10 @@ def post_channel(ch, ready_codes, input_rows, client):
         except Exception:
             logging.warning("Phong to bang Win+Up that bai.")
 
-        pyautogui.press('f5'); rsleep("medium")
+        pyautogui.press('f5')
+        # Cho trang upload load han 20s sau F5 roi moi bat dau do chonfile.png
+        logging.info("Da F5 -> cho 20s cho trang load truoc khi do chonfile.png...")
+        time.sleep(20)
 
         logging.info("Cho nut Select files (chonfile.png)...")
         if not wait_and_click_image(TEMPLATE_SELECT_BTN,
