@@ -717,7 +717,7 @@ def _reply_via_pool(prompt_text):
         json={
             "model": REPLY_MODEL,
             "messages": [{"role": "user", "content": prompt_text}],
-            "max_tokens": 300,
+            "max_tokens": 800,
         },
         timeout=REPLY_TIMEOUT,
     )
@@ -733,7 +733,7 @@ def _reply_via_gemini(prompt_text, key):
         url,
         json={
             "contents": [{"parts": [{"text": prompt_text}]}],
-            "generationConfig": {"maxOutputTokens": 300},
+            "generationConfig": {"maxOutputTokens": 800},
         },
         timeout=60,
     )
@@ -757,8 +757,7 @@ def gen_reply_with_prompt(prompt_text):
             try:
                 reply = (fn(prompt_text) or "").strip()
                 if reply:
-                    sentences = re.split(r'(?<=[.!?])\s+', reply)
-                    return " ".join(sentences[:2]).strip()
+                    return reply   # tra NGUYEN VAN, khong cat 2 cau nua
                 err = "reply rong"
             except Exception as e:
                 err = str(e)[:140]
